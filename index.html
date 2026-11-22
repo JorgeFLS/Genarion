@@ -1,0 +1,1697 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Genarion RPG</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+/* Layout: header + 3 tabs. Aventura = status strip, scrolling log, docked tray (Mestre button, dice, composer). Personagem = guided wizard or sheets. Campanha = recap, device settings, world. */
+:root {
+  --bg: #f1ebe0;
+  --surface: #fbf7ef;
+  --surface-2: #e9e0cf;
+  --fg: #231c14;
+  --muted: #65584a;
+  --line: #d3c7b0;
+  --accent: #8a4b12;
+  --accent-fg: #ffffff;
+  --accent-soft: #f0dcc0;
+  --good: #1f6b43;
+  --bad: #a8322b;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-story: "Spectral", Georgia, "Times New Roman", serif;
+  --font-dice: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14110d; --surface: #1e1913; --surface-2: #2a231a; --fg: #efe6d6; --muted: #aa9b82;
+    --line: #3a3125; --accent: #e0a050; --accent-fg: #1a1204; --accent-soft: #3a2a12;
+    --good: #6fcf9a; --bad: #ff8f86; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14110d; --surface: #1e1913; --surface-2: #2a231a; --fg: #efe6d6; --muted: #aa9b82;
+  --line: #3a3125; --accent: #e0a050; --accent-fg: #1a1204; --accent-soft: #3a2a12;
+  --good: #6fcf9a; --bad: #ff8f86; color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; box-sizing: border-box; background: var(--bg); color: var(--fg);
+  font: 15px/1.45 var(--font-ui);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+#app { height: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; }
+h1 { font: 600 21px/1.2 var(--font-story); margin: 0; letter-spacing: .02em; text-wrap: balance; }
+h2 { font: 600 16px/1.3 var(--font-ui); margin: 0; }
+h3 { font: 600 13px/1.3 var(--font-ui); margin: 0; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+header { padding-top: 12px; }
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 28px; }
+#status { font-size: 12px; color: var(--muted); text-align: right; }
+.tabs { display: flex; gap: 2px; margin-top: 8px; border-bottom: 1px solid var(--line); }
+.tab {
+  background: none; border: 0; border-bottom: 3px solid transparent; color: var(--muted);
+  font: 500 14px var(--font-ui); padding: 10px 14px 9px; cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+#strip { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; }
+#strip:empty { display: none; }
+.pcchip { font: 500 12.5px var(--font-ui); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+.pcchip b { font-family: var(--font-dice); font-weight: 700; margin-left: 4px; }
+.pcchip.low b { color: var(--bad); }
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view[hidden] { display: none; }
+.view.scroll { overflow-y: auto; padding: 16px 0 28px; gap: 14px; }
+
+/* log */
+#log { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 0; }
+.msg {
+  align-self: flex-start; max-width: 88%; min-width: 0; background: var(--surface);
+  border: 1px solid var(--line); border-left: 4px solid var(--who, var(--line));
+  border-radius: 10px; padding: 8px 12px;
+}
+.msg.mine { align-self: flex-end; background: var(--surface-2); }
+.who { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.master {
+  align-self: stretch; max-width: none; background: transparent; border: 0;
+  border-left: 3px solid var(--accent); border-radius: 0; padding: 4px 0 4px 14px;
+  font: 400 17px/1.6 var(--font-story);
+}
+.master .who { font: 600 11px var(--font-ui); text-transform: uppercase; letter-spacing: .1em; color: var(--accent); }
+.master.live .txt:empty::before { content: "O Mestre está narrando"; color: var(--muted); font-style: italic; }
+.master.live.wait .txt::after { content: "..."; display: inline-block; width: 1.2em; animation: dots 1.2s steps(4, end) infinite; overflow: hidden; vertical-align: bottom; }
+@keyframes dots { from { width: 0; } to { width: 1.2em; } }
+@media (prefers-reduced-motion: reduce) { .master.live.wait .txt::after { animation: none; } }
+.sys { align-self: center; text-align: center; color: var(--muted); font-size: 13px; max-width: 34em; }
+.sys .btn { margin-top: 10px; }
+.msg.sysmsg { align-self: center; max-width: 94%; background: var(--accent-soft); border: 1px dashed var(--line); border-radius: 10px; font-size: 13.5px; text-align: center; }
+.recap { align-self: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+.recap summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.recap p { margin-top: 6px; white-space: pre-wrap; }
+.dice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: var(--font-dice); }
+.die {
+  font-weight: 700; min-width: 34px; text-align: center; padding: 4px 8px;
+  border: 1.5px solid var(--fg); border-radius: 8px; background: var(--surface);
+}
+.die.crit { border-color: var(--good); color: var(--good); }
+.die.fail { border-color: var(--bad); color: var(--bad); }
+.mod { color: var(--muted); font-weight: 500; }
+.total { font-size: 22px; font-weight: 700; margin-left: 4px; }
+.tag { font: 600 11px var(--font-ui); text-transform: uppercase; letter-spacing: .08em; margin-top: 4px; }
+.tag.good { color: var(--good); } .tag.bad { color: var(--bad); }
+.msg.req { border-left-color: var(--accent); }
+.reqrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+
+/* dock */
+#dock { border-top: 1px solid var(--line); padding: 10px 0 12px; display: flex; flex-direction: column; gap: 8px; }
+#toast { background: var(--accent-soft); color: var(--fg); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.masterbar { display: flex; gap: 8px; }
+.masterbar .primary { flex: 1; min-width: 0; }
+#hint { font-size: 12.5px; color: var(--muted); margin-top: -2px; }
+#hint:empty { display: none; }
+#tray[hidden] { display: none; }
+#tray { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.chip {
+  flex: none; font: 700 14px var(--font-dice); color: var(--fg); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 40px;
+}
+.custom { display: flex; gap: 8px; }
+.custom input { flex: 1; min-width: 0; font-family: var(--font-dice); }
+#composer { display: flex; gap: 8px; align-items: flex-end; }
+#composer textarea { flex: 1; min-width: 0; resize: none; max-height: 120px; }
+
+/* controls */
+input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  box-sizing: border-box; width: 100%; background: var(--surface); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: inherit;
+}
+textarea { line-height: 1.4; }
+.btn {
+  background: var(--surface-2); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  font: 600 14px var(--font-ui); padding: 10px 14px; cursor: pointer; min-height: 42px;
+}
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* cards, forms */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+label.check { flex-direction: row; align-items: flex-start; gap: 10px; color: var(--fg); font-weight: 400; font-size: 14px; }
+label.check input { margin-top: 3px; }
+.lbl { font-size: 13px; font-weight: 500; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.danger .btn { color: var(--bad); }
+details.card summary { cursor: pointer; font-weight: 600; }
+details.card ul { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+/* wizard */
+.prog { display: flex; gap: 4px; }
+.prog .seg { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+.prog .seg.done { background: var(--accent); opacity: .55; }
+.prog .seg.cur { background: var(--accent); }
+.hint { font-size: 13.5px; color: var(--muted); }
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.opt {
+  text-align: left; background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; cursor: pointer; color: var(--fg); font: inherit; display: flex; flex-direction: column; gap: 2px; min-height: 44px;
+}
+.opt b { font-weight: 600; }
+.opt span { font-size: 12.5px; color: var(--muted); }
+.opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.pill { align-self: flex-start; font: 600 13px var(--font-ui); background: var(--surface-2); border-radius: 999px; padding: 4px 12px; }
+.pill.ok { background: var(--accent-soft); color: var(--good); }
+.arow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.arow:last-of-type { border-bottom: 0; }
+.arow .n { font-weight: 600; }
+.arow .d { font-size: 12.5px; color: var(--muted); }
+.stp { display: flex; align-items: center; gap: 6px; flex: none; }
+.stp .v { min-width: 30px; text-align: center; font: 700 18px var(--font-dice); }
+.stp button { width: 42px; height: 42px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg); font: 700 20px var(--font-ui); cursor: pointer; }
+.stp button:disabled { opacity: .35; cursor: not-allowed; }
+.skgroup { display: flex; flex-direction: column; gap: 6px; }
+.skwrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.sk {
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px;
+  padding: 7px 12px; font: 500 13.5px var(--font-ui); cursor: pointer; min-height: 38px;
+}
+.sk[data-l="1"] { border-color: var(--accent); background: var(--accent-soft); }
+.sk[data-l="2"] { border-color: var(--accent); background: var(--accent); color: var(--accent-fg); }
+.sk i { font: 700 12px var(--font-dice); font-style: normal; margin-left: 6px; opacity: .9; }
+.derived { display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 8px; }
+.dv { background: var(--surface-2); border-radius: 10px; padding: 8px; text-align: center; display: flex; flex-direction: column; }
+.dv b { font: 700 18px var(--font-dice); }
+.dv span { font-size: 11.5px; color: var(--muted); }
+.err { font-size: 13px; color: var(--bad); min-height: 1.2em; }
+.nav { display: flex; gap: 8px; }
+.nav .primary { flex: 1; }
+
+/* sheet */
+.sheet-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sheet-sub { font-size: 13px; color: var(--muted); }
+.hp { display: flex; align-items: center; gap: 6px; }
+.hp .v { font: 700 18px var(--font-dice); min-width: 70px; text-align: center; }
+.attrs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.at { background: var(--surface-2); border-radius: 8px; padding: 6px 8px; display: flex; justify-content: space-between; font-size: 13px; }
+.at b { font-family: var(--font-dice); }
+.kv { font-size: 14px; overflow-wrap: anywhere; }
+.kv b { font-weight: 600; }
+.lobby { padding: 8px 0; display: flex; flex-direction: column; gap: 12px; overflow: auto; flex: 1; min-height: 0; }
+.lobby .code { font: 700 22px var(--font-dice); letter-spacing: .12em; text-transform: uppercase; }
+#llm-url-l[hidden], .lobby[hidden], .tabs[hidden], #strip[hidden] { display: none; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row input[type=text], .row input[type=password] { flex: 1; min-width: 120px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="top">
+      <h1>Genarion</h1>
+      <span id="status" role="status"></span>
+    </div>
+    <div class="tabs" role="tablist" hidden>
+      <button class="tab" role="tab" id="t-aventura" aria-selected="true" aria-controls="v-aventura" type="button">Aventura</button>
+      <button class="tab" role="tab" id="t-personagem" aria-selected="false" aria-controls="v-personagem" type="button">Personagem</button>
+      <button class="tab" role="tab" id="t-campanha" aria-selected="false" aria-controls="v-campanha" type="button">Campanha</button>
+    </div>
+    <div id="strip" hidden></div>
+  </header>
+
+  <main>
+    <section id="lobby" class="lobby">
+      <div class="card stack">
+        <h2>Genarion — As Eras Esquecidas</h2>
+        <p class="muted">RPG de mesa por texto para dois, com Mestre de IA. Grátis: a conexão é direta entre os dois aparelhos.</p>
+      </div>
+      <div class="card stack" id="lb-continue" hidden>
+        <h2>Continuar sua mesa</h2>
+        <p class="muted" id="lb-continue-txt"></p>
+        <button id="btn-continue" class="btn primary" type="button">Continuar mesa</button>
+      </div>
+      <div class="card stack">
+        <h2>Importar mesa de um arquivo</h2>
+        <p class="muted small">Para continuar uma campanha exportada em outro aparelho.</p>
+        <button id="btn-lb-import" class="btn" type="button">Escolher arquivo</button>
+        <input id="lb-file" type="file" accept="application/json,.json" hidden>
+      </div>
+      <div class="card stack">
+        <h2>Criar uma mesa (você será o anfitrião)</h2>
+        <p class="muted small">O anfitrião deixa esta aba aberta durante o jogo e configura o Mestre de IA com uma chave gratuita.</p>
+        <button id="btn-host" class="btn primary" type="button">Criar mesa nova</button>
+      </div>
+      <div class="card stack">
+        <h2>Entrar na mesa do amigo</h2>
+        <div class="row">
+          <input id="join-code" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="Código" aria-label="Código da mesa">
+          <button id="btn-join" class="btn primary" type="button">Entrar</button>
+        </div>
+        <p class="err" id="lb-err"></p>
+      </div>
+    </section>
+    <section id="v-aventura" class="view" role="tabpanel" aria-labelledby="t-aventura" hidden>
+      <div id="log" aria-live="polite"></div>
+      <div id="dock">
+        <div id="toast" role="status" hidden></div>
+        <div class="masterbar">
+          <button id="btn-master" class="btn primary" type="button" hidden></button>
+          <button id="btn-stop" class="btn" type="button" hidden>Parar</button>
+        </div>
+        <div id="hint"></div>
+        <div id="tray" hidden>
+          <div class="chips" id="chips"></div>
+          <div class="custom">
+            <input id="expr" type="text" autocomplete="off" autocapitalize="off" placeholder="2d6+3" aria-label="Expressão de dados">
+            <button id="btn-roll" class="btn" type="button">Rolar</button>
+          </div>
+        </div>
+        <form id="composer">
+          <button id="btn-dice" class="btn" type="button" aria-expanded="false" aria-controls="tray">Dados</button>
+          <textarea id="msg" rows="1" maxlength="500" placeholder="O que seu personagem faz?" aria-label="Sua ação"></textarea>
+          <button id="btn-send" class="btn primary" type="submit">Enviar</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="v-personagem" class="view scroll" role="tabpanel" aria-labelledby="t-personagem" hidden>
+      <div id="fichas" class="stack"></div>
+    </section>
+
+    <section id="v-campanha" class="view scroll" role="tabpanel" aria-labelledby="t-campanha" hidden>
+      <div class="card stack">
+        <h2>Anteriormente</h2>
+        <p id="recap-txt" class="muted">Ainda não há resumo. Ao encerrar a noite, gere um: ele guarda a história para a próxima sessão.</p>
+        <button id="btn-recap" class="btn" type="button">Gerar resumo da sessão</button>
+      </div>
+      <div class="card stack">
+        <h2>Sala</h2>
+        <div class="row"><span class="code" id="room-code" style="font:700 20px var(--font-dice);letter-spacing:.12em"></span><button id="btn-copy" class="btn" type="button">Copiar link</button></div>
+        <p id="room-status" class="muted small"></p>
+        <button id="btn-leave" class="btn" type="button">Sair da mesa</button>
+      </div>
+      <div class="card stack" id="card-llm" hidden>
+        <h2>Mestre de IA (só no anfitrião)</h2>
+        <label for="llm-prov">Serviço
+          <select id="llm-prov">
+            <option value="gemini">Google Gemini (grátis)</option>
+            <option value="groq">Groq (grátis)</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="custom">Outro (compatível com OpenAI)</option>
+          </select>
+        </label>
+        <label for="llm-key">Chave de API (fica só neste navegador)
+          <input id="llm-key" type="password" autocomplete="off" placeholder="Cole a chave aqui">
+        </label>
+        <label for="llm-model">Modelo
+          <input id="llm-model" type="text" autocomplete="off" autocapitalize="off" list="llm-models">
+          <datalist id="llm-models"></datalist>
+        </label>
+        <label for="llm-url" id="llm-url-l" hidden>Endereço base da API
+          <input id="llm-url" type="text" autocomplete="off" autocapitalize="off" placeholder="https://.../v1">
+        </label>
+        <div class="row">
+          <button id="btn-models" class="btn" type="button">Buscar modelos</button>
+          <button id="btn-test" class="btn" type="button">Testar conexão</button>
+        </div>
+        <p id="llm-msg" class="muted small"></p>
+        <p class="muted small">Gemini: chave grátis em aistudio.google.com/apikey. Groq: console.groq.com/keys. Cada rodada é uma chamada; os planos grátis têm limite por minuto e por dia.</p>
+      </div>
+      <div class="card stack">
+        <h2>Neste aparelho</h2>
+        <label class="check" id="auto-l" for="auto"><input id="auto" type="checkbox"> Rodada automática: o Mestre responde sozinho quando todos já agiram (uma chamada por rodada)</label>
+        <p id="statsline" class="muted small"></p>
+      </div>
+      <div class="card stack" id="card-save" hidden>
+        <h2>Salvar a campanha</h2>
+        <p class="muted small">O anfitrião guarda a mesa neste navegador. Exporte um arquivo para backup ou para trocar de aparelho.</p>
+        <div class="row">
+          <button id="btn-export" class="btn" type="button">Exportar</button>
+          <button id="btn-import" class="btn" type="button">Importar</button>
+          <input id="file-import" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+      <form id="cfg" class="card stack">
+        <h2>Ponto de partida (opcional)</h2>
+        <label for="cfg-premissa">Se quiser, diga onde ou como a aventura começa. Em branco, o Mestre abre em Porto Vesperal.
+          <textarea id="cfg-premissa" rows="3" maxlength="400" placeholder="Ex.: Os dois chegam a uma vila de Ysmar durante uma nevasca."></textarea>
+        </label>
+        <button class="btn primary" type="submit">Salvar</button>
+      </form>
+      <details class="card">
+        <summary>Genarion em 1 minuto</summary>
+        <ul>
+          <li><b>Aurelion</b>: planícies e rios sob o Império Aurélio, vasto e burocrático.</li>
+          <li><b>Khar-Dumul</b>: cordilheiras e vulcões; clãs de anões e orcs, minas e forjas.</li>
+          <li><b>Sylvareth</b>: florestas antigas de elfos e fadas, regidas pelo Conselho das Copas.</li>
+          <li><b>Thessara</b>: costa e ilhas da Liga dos Sete Portos. Porto Vesperal é sua maior cidade, onde todos os povos se cruzam.</li>
+          <li><b>Ombrária</b>: brumas, pântanos, ordens religiosas e gnomos eruditos.</li>
+          <li><b>Drakmoor</b>: desertos de cinza e torres de basalto dos draconianos.</li>
+          <li><b>Ysmar</b>: tundra e aurora; clãs nômades de homens-fera.</li>
+        </ul>
+      </details>
+      <div class="card stack">
+        <h2>Convidar o amigo</h2>
+        <p>Mande o código ou o link da sala. Ele só precisa abrir a página; não precisa de conta. O anfitrião deve manter a aba aberta.</p>
+      </div>
+      <div class="card stack danger" id="danger" hidden>
+        <h2>Recomeçar a aventura</h2>
+        <p class="muted">Apaga o histórico, a memória e o resumo. Os personagens ficam.</p>
+        <button id="btn-clear" class="btn" type="button">Apagar história</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const $ = (s, r) => (r || document).querySelector(s);
+const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+};
+const norm = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const clip = (s, n) => { s = String(s == null ? "" : s); return s.length > n ? s.slice(0, n) + "..." : s; };
+const one = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
+const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
+
+/* ---------- regras e dados do mundo ---------- */
+const ATR = ["Força", "Agilidade", "Vigor", "Intelecto", "Percepção", "Presença"];
+const ATR_DESC = {
+  "Força": "Golpes, carga, escalar e arrombar.",
+  "Agilidade": "Reflexos, equilíbrio, mira e Defesa.",
+  "Vigor": "Saúde e resistência: cada ponto dá +3 PV.",
+  "Intelecto": "Conhecimento, raciocínio e magia.",
+  "Percepção": "Atenção, sentidos e investigação.",
+  "Presença": "Carisma, liderança e influência."
+};
+const PERICIAS = {
+  "Espadas": ["Força", "Combate"], "Machados": ["Força", "Combate"], "Contusivas": ["Força", "Combate"],
+  "Adagas": ["Agilidade", "Combate"], "Arcos": ["Agilidade", "Combate"], "Desarmado": ["Força", "Combate"],
+  "Atletismo": ["Força", "Corpo"], "Furtividade": ["Agilidade", "Corpo"], "Cavalgar": ["Agilidade", "Corpo"], "Sobrevivência": ["Percepção", "Corpo"],
+  "Investigação": ["Percepção", "Mente"], "Intuição": ["Percepção", "Mente"], "Erudição": ["Intelecto", "Mente"],
+  "Arcanismo": ["Intelecto", "Mente"], "Religião": ["Intelecto", "Mente"], "Alquimia": ["Intelecto", "Mente"], "Medicina": ["Intelecto", "Mente"],
+  "Persuasão": ["Presença", "Social"], "Negociação": ["Presença", "Social"], "Enganação": ["Presença", "Social"], "Intimidação": ["Presença", "Social"],
+  "Ladinagem": ["Agilidade", "Ofício"], "Navegação": ["Intelecto", "Ofício"], "Ofícios": ["Intelecto", "Ofício"]
+};
+const GRUPOS = ["Combate", "Corpo", "Mente", "Social", "Ofício"];
+const ESPECIES = [
+  { id: "Humano", d: "Adaptáveis e presentes em todo continente.", t: "adaptável, vive ~70 anos" },
+  { id: "Elfo", d: "Sentidos aguçados na mata e no escuro. Vivem séculos.", t: "visão noturna, vive séculos" },
+  { id: "Anão", d: "Robustos e teimosos, mestres da pedra e do metal.", t: "visão em penumbra, resiste a venenos" },
+  { id: "Orc", d: "Fôlego e força bruta; vivem em clãs e por honra.", t: "fôlego e vigor, vive ~60 anos" },
+  { id: "Draconiano", d: "Pele escamosa que suporta calor extremo.", t: "escamas, resiste a calor" },
+  { id: "Homem-fera", d: "Traços de um animal à escolha; faro e ouvido apurados.", t: "faro e audição apurados" },
+  { id: "Gnomo", d: "Pequenos, curiosos, inventores natos.", t: "pequeno, engenhoso, vive ~200 anos" },
+  { id: "Fada", d: "Leves, de asas curtas que planam. Sentem o ferro frio.", t: "plana, sensível a ferro" }
+];
+const ORIGENS = [
+  ["Porto Vesperal, Thessara", "cidade-porto onde todos os povos se cruzam"],
+  ["Império de Aurelion", "planícies férteis sob o Império Aurélio"],
+  ["Montanhas de Khar-Dumul", "clãs de anões e orcs entre minas e vulcões"],
+  ["Bosques de Sylvareth", "florestas antigas de elfos e fadas"],
+  ["Brumas de Ombrária", "pântanos, ordens religiosas e eruditos"],
+  ["Cinzas de Drakmoor", "desertos de basalto e torres draconianas"],
+  ["Tundra de Ysmar", "caçadores nômades do gelo e da aurora"],
+  ["Sem pátria", "viajante sem raízes"]
+];
+const ARMAS = [
+  { n: "Adaga", dado: "1d4", atr: "Agilidade", per: "Adagas" },
+  { n: "Espada curta", dado: "1d6", atr: "Força", per: "Espadas" },
+  { n: "Espada longa", dado: "1d8", atr: "Força", per: "Espadas" },
+  { n: "Machado pesado", dado: "1d10", atr: "Força", per: "Machados" },
+  { n: "Maça", dado: "1d6", atr: "Força", per: "Contusivas" },
+  { n: "Arco curto", dado: "1d6", atr: "Agilidade", per: "Arcos" },
+  { n: "Arco longo", dado: "1d8", atr: "Agilidade", per: "Arcos" },
+  { n: "Cajado arcano (Centelha)", dado: "1d6", atr: "Intelecto", per: "Arcanismo" },
+  { n: "Punhos", dado: "1d3", atr: "Força", per: "Desarmado" }
+];
+const ARMADURAS = [
+  { n: "Sem armadura", r: 0 }, { n: "Gibão de couro", r: 1 }, { n: "Cota de malha", r: 2 }, { n: "Armadura de placas", r: 3 }
+];
+const ESCUDOS = [{ n: "Nenhum", b: 0 }, { n: "Escudo", b: 1 }, { n: "Escudo de torre", b: 2 }];
+// atributos na ordem: Força, Agilidade, Vigor, Intelecto, Percepção, Presença (9 pontos, máx. 3)
+const ARQ = [
+  { id: "Guerreiro", d: "Linha de frente: espada, escudo e resistência.", atr: [3, 1, 3, 0, 1, 1], esp: "Espadas", trein: ["Atletismo", "Intimidação", "Sobrevivência"], arma: "Espada longa", armadura: "Gibão de couro", escudo: "Escudo", itens: ["Mochila", "Cantil", "Corda (10 m)"], moedas: 25 },
+  { id: "Arqueiro", d: "Olhar de caçador e mira certeira à distância.", atr: [1, 3, 1, 0, 3, 1], esp: "Arcos", trein: ["Sobrevivência", "Furtividade", "Investigação"], arma: "Arco longo", armadura: "Gibão de couro", escudo: "Nenhum", itens: ["Aljava com 20 flechas", "Faca de caça", "Mochila"], moedas: 20 },
+  { id: "Ladino", d: "Sombras, fechaduras e golpes onde dói.", atr: [0, 3, 1, 1, 2, 2], esp: "Furtividade", trein: ["Ladinagem", "Adagas", "Enganação"], arma: "Adaga", armadura: "Gibão de couro", escudo: "Nenhum", itens: ["Gazuas", "Capuz escuro", "Mochila"], moedas: 35 },
+  { id: "Mago", d: "Estudioso das artes arcanas e dos segredos.", atr: [1, 1, 1, 3, 2, 1], esp: "Arcanismo", trein: ["Erudição", "Investigação", "Alquimia"], arma: "Cajado arcano (Centelha)", armadura: "Sem armadura", escudo: "Nenhum", itens: ["Grimório", "Tinteiro e penas", "Mochila"], moedas: 30 },
+  { id: "Clérigo", d: "Fé, cura e palavra firme diante do perigo.", atr: [1, 0, 2, 2, 1, 3], esp: "Medicina", trein: ["Religião", "Persuasão", "Intuição"], arma: "Maça", armadura: "Gibão de couro", escudo: "Escudo", itens: ["Símbolo sagrado", "Ervas e ataduras", "Mochila"], moedas: 20 },
+  { id: "Diplomata", d: "Língua afiada, contatos e bolsa cheia.", atr: [0, 1, 1, 2, 2, 3], esp: "Negociação", trein: ["Persuasão", "Erudição", "Intuição"], arma: "Adaga", armadura: "Sem armadura", escudo: "Nenhum", itens: ["Roupas finas", "Livro de contas", "Mochila"], moedas: 60 },
+  { id: "Explorador", d: "Estradas, mapas e sobrevivência em terra hostil.", atr: [1, 2, 2, 1, 2, 1], esp: "Sobrevivência", trein: ["Atletismo", "Navegação", "Espadas"], arma: "Espada curta", armadura: "Gibão de couro", escudo: "Nenhum", itens: ["Mapa em branco", "Kit de acampamento", "Corda (10 m)", "Mochila"], moedas: 25 },
+  { id: "Personalizado", d: "Comece do zero e monte tudo do seu jeito.", atr: [0, 0, 0, 0, 0, 0], esp: "", trein: [], arma: "Punhos", armadura: "Sem armadura", escudo: "Nenhum", itens: ["Mochila"], moedas: 30 }
+];
+const DADOS = [4, 6, 8, 10, 12, 20, 100];
+
+// Prompt fixo do Mestre: curto de propósito (é reenviado a cada chamada).
+const MESTRE = [
+  "Você é o Mestre de GENARION — AS ERAS ESQUECIDAS, RPG de mesa por texto em pt-BR para 2 jogadores.",
+  "MUNDO: 7 continentes: Aurelion (planícies, Império Aurélio humano), Khar-Dumul (montanhas e vulcões; anões e orcs), Sylvareth (florestas; elfos e fadas), Thessara (costa e ilhas; Liga dos Sete Portos; cidade-porto Porto Vesperal), Ombrária (brumas e pântanos; ordens religiosas, gnomos eruditos), Drakmoor (desertos de cinza; draconianos), Ysmar (tundra; homens-fera nômades). Moeda: coroa. Nenhuma espécie é boa ou má por natureza. Magia é rara, custosa e gradual. NPCs, reinos e facções têm interesses próprios e agem sem os jogadores; decisões geram consequências.",
+  "SEGREDOS (só pistas graduais, nunca revelação definitiva): nas eras antigas existiram indivíduos extraordinários de várias espécies que sumiram sem explicação; ruínas, artefatos e registros deles estão espalhados. Os Inversos vivem o tempo em sentido contrário; quase nada se sabe deles. Não presuma que os dois mistérios se ligam.",
+  "EQUILÍBRIO: trama central lenta + histórias secundárias vivas (política, comércio, crimes, expedições, religião) + liberdade total dos jogadores. Sem escolhidos, profecias obrigatórias ou missões em lista.",
+  "REGRAS DE OURO: nunca decida ações, falas, pensamentos ou escolhas dos personagens dos jogadores. Perigo real, sem proteção narrativa, inimigos não enfraquecem; falhas geram complicações. Só peça teste quando há risco real. O app controla PV; você só descreve efeitos.",
+  "ESTILO: 3ª pessoa, imersivo, 70 a 120 palavras, sem listas, títulos ou markdown, sem repetir o que já foi dito, fim aberto sem menu de opções. Sons, luz e clima em poucos traços.",
+  "MECÂNICA: o app rola os dados; NUNCA invente resultados. Ao pedir rolagem, termine a narração na tentativa ou ameaça, sem dizer o desfecho. A ÚLTIMA linha da resposta é sempre #E seguida de JSON compacto, com estas chaves opcionais:",
+  "t:[[nome,perícia,CD,atributo?]] teste do jogador (CD 8 muito fácil, 11 fácil, 14 moderada, 17 difícil, 20 muito difícil, 23 extraordinária; CD 0 = iniciativa);",
+  "a:[[nome,CD]] ataque de jogador (CD = Defesa do alvo);",
+  "d:[[alvo,bônus,\"1d6\",\"inimigo\"]] ataque de inimigo contra jogador (o app compara com a Defesa dele);",
+  "pv:[[nome,±n]] dano ou cura fora de combate;",
+  "cena:\"estado atual em até 250 caracteres: local, hora, inimigos com PV restante, ameaças\" (sempre atualize);",
+  "mem:[\"fato permanente curto\"] (só quando algo importante e novo surgir).",
+  "Exemplo: #E {\"t\":[[\"Aria\",\"Furtividade\",14]],\"cena\":\"Porão do armazém, noite; 2 capangas (PV 6 e 6).\"}",
+  "Perícias válidas: " + Object.keys(PERICIAS).join(", ") + "."
+].join("\n");
+
+/* ---------- derivados da ficha ---------- */
+const atrV = (f, a) => (f && f.atr && f.atr[ATR.indexOf(a)]) || 0;
+const lv = (f, per) => (f.espec === per ? 2 : ((f.trein || []).includes(per) ? 1 : 0));
+const pvMaxOf = (f) => 10 + 3 * atrV(f, "Vigor");
+const armaOf = (f) => ARMAS.find((a) => a.n === f.arma) || ARMAS[ARMAS.length - 1];
+const armOf = (f) => ARMADURAS.find((a) => a.n === f.armadura) || ARMADURAS[0];
+const escOf = (f) => ESCUDOS.find((a) => a.n === f.escudo) || ESCUDOS[0];
+const defOf = (f) => 10 + atrV(f, "Agilidade") + escOf(f).b;
+const atkOf = (f) => { const w = armaOf(f); return atrV(f, w.atr) + lv(f, w.per); };
+const BLANK = () => ({ nome: "", especie: "", traco: "", idade: "", aparencia: "", arq: "", atr: [0, 0, 0, 0, 0, 0], espec: "", trein: [], arma: "Punhos", armadura: "Sem armadura", escudo: "Nenhum", itens: "Mochila", moedas: 30, origem: "", hist: "", obj: "", pers: "" });
+
+/* ---------- estado ---------- */
+let db = null;
+let isHost = false, room = null, synced = false, hostUid = null, optS = {};
+let me = { id: null, name: "", color: "#8a94a8" };
+let canWrite = true, canAdmin = false;
+let msgs = [], fichas = {}, config = {}, turn = null, memS = {}, stats = {}, resumo = null, profs = {};
+let narrating = false, liveText = "", ctl = null, masterOff = false, gotLive = false, firstRender = true, gotFichas = false;
+let wiz = null, wizShown = false, pendingAuto = false, pendingAutoAt = 0, recapOpen = false, toastTimer = null;
+
+const log = $("#log"), msgBox = $("#msg"), composer = $("#composer");
+const btnMaster = $("#btn-master"), btnStop = $("#btn-stop"), tray = $("#tray");
+const autoOn = () => (isHost ? store.get("gen-auto") !== "0" : optS.auto !== false);
+
+/* ---------- utilidades ---------- */
+function nameOf(uid) {
+  const f = uid && fichas[uid];
+  if (f && f.nome) return f.nome;
+  return uid === hostUid ? "Anfitrião" : "Jogador";
+}
+const colorOf = (uid) => (!uid ? "var(--line)" : (uid === hostUid ? "#c07a2c" : "#3d7a9e"));
+function notice(text) {
+  const t = $("#toast");
+  t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 7000);
+}
+const setStatus = (t) => { $("#status").textContent = t || ""; };
+function dbError(e) {
+  const c = e && e.code;
+  if (c === "offline") notice("Sem conexão com o anfitrião. Aguarde reconectar e tente de novo.");
+  else notice("Não consegui salvar na mesa agora. Tente de novo.");
+}
+function findPlayer(name) {
+  const ids = Object.keys(fichas).filter((id) => fichas[id] && fichas[id].nome);
+  if (!ids.length) return null;
+  const q = norm(name);
+  let id = ids.find((i) => norm(fichas[i].nome) === q);
+  if (!id) id = ids.find((i) => q && (norm(fichas[i].nome).includes(q) || q.includes(norm(fichas[i].nome))));
+  if (!id && ids.length === 1) id = ids[0];
+  return id ? [id, fichas[id]] : null;
+}
+const findAtr = (s) => ATR.find((a) => norm(a) === norm(s)) || null;
+const isBusy = () => narrating || !!(turn && turn.busy && Date.now() - (turn.at || 0) < 180000);
+const lastMasterIdx = () => { for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === "master") return i; return -1; };
+const pendReqs = () => msgs.filter((m) => m.kind === "req" && m.st !== "done");
+
+/* ---------- dados ---------- */
+function rng(n) {
+  const max = Math.floor(0x100000000 / n) * n, a = new Uint32Array(1);
+  do { crypto.getRandomValues(a); } while (a[0] >= max);
+  return (a[0] % n) + 1;
+}
+function parseExpr(s) {
+  const m = String(s).trim().toLowerCase().replace(/\s+/g, "").match(/^(\d{0,2})d(\d{1,4})([+-]\d{1,3})?$/);
+  if (!m) return null;
+  const n = m[1] ? +m[1] : 1, sides = +m[2], mod = m[3] ? +m[3] : 0;
+  if (n < 1 || n > 20 || sides < 2 || sides > 1000) return null;
+  return { n, sides, mod };
+}
+function rollDice(p) {
+  const rolls = [];
+  for (let i = 0; i < p.n; i++) rolls.push(rng(p.sides));
+  return { rolls, total: rolls.reduce((a, b) => a + b, 0) + p.mod };
+}
+async function post(doc) {
+  if (!db) return false;
+  try { await db.collection("msgs").add(doc); return true; }
+  catch (e) { dbError(e); return false; }
+}
+async function doRoll(str) {
+  const p = parseExpr(str);
+  if (!p) { notice("Use o formato 2d6+3: até 20 dados, de 2 a 1000 lados."); return; }
+  const r = rollDice(p);
+  await post({ kind: "roll", uid: me.id, ts: Date.now(), n: p.n, sides: p.sides, mod: p.mod, rolls: r.rolls, total: r.total });
+}
+
+/* ---------- testes e ataques (resolvidos aqui, sem gastar tokens) ---------- */
+function reqBonus(f, m) {
+  if (m.tipo === "a") return atkOf(f);
+  return atrV(f, m.atr) + lv(f, m.per);
+}
+async function doReq(m) {
+  const f = fichas[me.id];
+  if (!f) { notice("Crie seu personagem primeiro."); return; }
+  if (m.uid && m.uid !== me.id) return;
+  const nat = rng(20), b = reqBonus(f, m), total = nat + b;
+  const ok = m.cd ? (nat === 20 || (nat !== 1 && total >= m.cd)) : null;
+  const res = { st: "done", uid: me.id, nome: f.nome, nat, b, total, ok, dano: null, arma: null };
+  if (m.tipo === "a") {
+    const w = armaOf(f); res.arma = w.n;
+    if (ok) { const r = rollDice(parseExpr(w.dado)); res.dano = nat === 20 ? r.total * 2 : r.total; }
+  }
+  try { await db.doc("msgs/" + m.id).update(res); pendingAuto = true; pendingAutoAt = Date.now(); maybeAuto(); }
+  catch (e) { dbError(e); }
+}
+async function cancelReq(m) { try { await db.doc("msgs/" + m.id).delete(); } catch (e) { dbError(e); } }
+const natTag = (m) => (m.nat === 20 ? " (20 natural)" : m.nat === 1 ? " (1 natural)" : "");
+function reqLine(m) {
+  const nm = m.nome || "?";
+  if (m.tipo === "a") return nm + " ataca (CD " + m.cd + ") com " + (m.arma || "arma") + ": " + m.total + (m.ok ? " ACERTA, dano " + (m.dano || 0) : " ERRA") + natTag(m);
+  if (!m.cd) return nm + " — " + m.per + ": " + m.total + natTag(m);
+  return nm + " — " + m.per + " CD" + m.cd + ": " + m.total + (m.ok ? " SUCESSO" : " FALHA") + natTag(m);
+}
+
+/* ---------- renderização: aventura ---------- */
+function renderRoll(m) {
+  const box = mk("div", "msg roll" + (m.uid && m.uid === me.id ? " mine" : ""));
+  box.style.setProperty("--who", colorOf(m.uid));
+  box.append(mk("div", "who", nameOf(m.uid) + " rolou " + (m.n > 1 ? m.n : "") + "d" + m.sides + (m.mod ? (m.mod > 0 ? "+" : "") + m.mod : "")));
+  const row = mk("div", "dice-row");
+  const nat = (m.n === 1 && m.sides === 20) ? m.rolls[0] : null;
+  (m.rolls || []).forEach((v) => {
+    const d = mk("span", "die", String(v));
+    if (nat === 20) d.classList.add("crit"); else if (nat === 1) d.classList.add("fail");
+    row.append(d);
+  });
+  if (m.mod) row.append(mk("span", "mod", sgn(m.mod)));
+  row.append(mk("span", "total", "= " + m.total));
+  box.append(row);
+  return box;
+}
+function renderReq(m) {
+  const box = mk("div", "msg req");
+  const label = m.tipo === "a" ? "Ataque" : (m.cd ? "Teste de " + m.per : m.per);
+  box.append(mk("div", "who", (m.nome || "Qualquer jogador") + " · " + label + (m.cd ? " · CD " + m.cd : "")));
+  if (m.st === "done") {
+    const row = mk("div", "dice-row");
+    const d = mk("span", "die", String(m.nat));
+    if (m.nat === 20) d.classList.add("crit"); else if (m.nat === 1) d.classList.add("fail");
+    row.append(d, mk("span", "mod", sgn(m.b)), mk("span", "total", "= " + m.total));
+    box.append(row);
+    if (m.cd) box.append(mk("div", "tag " + (m.ok ? "good" : "bad"), m.nat === 20 ? "Sucesso crítico" : m.nat === 1 ? "Falha crítica" : m.ok ? "Sucesso" : "Falha"));
+    if (m.tipo === "a" && m.ok && m.dano != null) box.append(mk("div", "tag good", "Dano " + m.dano + (m.arma ? " · " + m.arma : "")));
+    return box;
+  }
+  const f = fichas[me.id];
+  const mine = !m.uid || m.uid === me.id;
+  const row = mk("div", "reqrow");
+  if (mine && f && canWrite !== false) {
+    const b = mk("button", "btn primary", (m.tipo === "a" ? "Atacar" : "Rolar " + m.per) + " (d20 " + sgn(reqBonus(f, m)) + ")");
+    b.type = "button"; b.addEventListener("click", () => doReq(m));
+    row.append(b);
+  } else row.append(mk("span", "muted small", "Aguardando a rolagem..."));
+  const c = mk("button", "btn", "Cancelar"); c.type = "button"; c.addEventListener("click", () => cancelReq(m));
+  row.append(c);
+  box.append(row);
+  return box;
+}
+function renderMsg(m) {
+  if (m.kind === "roll") return renderRoll(m);
+  if (m.kind === "req") return renderReq(m);
+  if (m.kind === "sys") return mk("div", "msg sysmsg", m.text);
+  if (m.kind === "master") {
+    const b = mk("div", "msg master");
+    b.append(mk("div", "who", "Mestre"), mk("div", "txt", m.text));
+    return b;
+  }
+  const b = mk("div", "msg" + (m.uid && m.uid === me.id ? " mine" : ""));
+  b.style.setProperty("--who", colorOf(m.uid));
+  b.append(mk("div", "who", nameOf(m.uid)), mk("div", "txt", m.text));
+  return b;
+}
+function renderLog() {
+  const nearBottom = firstRender || (log.scrollHeight - log.scrollTop - log.clientHeight < 140);
+  log.replaceChildren();
+  if (resumo && resumo.text) {
+    const d = mk("details", "recap"); d.open = recapOpen;
+    d.addEventListener("toggle", () => { recapOpen = d.open; });
+    d.append(mk("summary", null, "Anteriormente..."), mk("p", null, resumo.text));
+    log.append(d);
+  }
+  if (me.id && !fichas[me.id] && canWrite !== false) {
+    const s = mk("div", "sys");
+    s.append(mk("p", null, "Antes de jogar, crie seu personagem. Leva uns dois minutos."));
+    const b = mk("button", "btn primary", "Criar personagem"); b.type = "button"; b.addEventListener("click", () => startWizard());
+    s.append(b); log.append(s);
+  } else if (!msgs.length && !isBusy()) {
+    const s = mk("div", "sys");
+    s.append(mk("p", null, "A mesa está vazia. Quando os dois personagens estiverem prontos, toque em \"Abrir a aventura\"."));
+    log.append(s);
+  }
+  msgs.forEach((m) => log.append(renderMsg(m)));
+  if (isBusy()) {
+    const b = mk("div", "msg master live wait");
+    b.append(mk("div", "who", "Mestre"), mk("div", "txt", narrating ? liveText : ""));
+    log.append(b);
+  }
+  if (nearBottom) log.scrollTop = log.scrollHeight;
+  firstRender = false;
+}
+function renderStrip() {
+  const s = $("#strip"); s.replaceChildren();
+  Object.keys(fichas).forEach((id) => {
+    const f = fichas[id]; if (!f || !f.nome) return;
+    const mx = f.pvMax || pvMaxOf(f), pv = f.pv == null ? mx : f.pv;
+    const c = mk("span", "pcchip" + (pv <= mx * 0.3 ? " low" : ""), f.nome);
+    c.append(mk("b", null, "PV " + pv + "/" + mx));
+    s.append(c);
+  });
+}
+function waiting() {
+  const li = lastMasterIdx(), after = msgs.slice(li + 1);
+  const acted = new Set(after.filter((m) => m.kind === "player").map((m) => m.uid));
+  return Object.keys(fichas).filter((id) => fichas[id] && fichas[id].nome && !acted.has(id)).map((id) => fichas[id].nome);
+}
+function renderBar() {
+  const busy = isBusy(), pend = pendReqs();
+  btnMaster.hidden = !(isHost || netOpen());
+  btnStop.hidden = !narrating;
+  const li = lastMasterIdx(), after = msgs.slice(li + 1).filter((m) => m.kind === "player" || m.kind === "roll" || (m.kind === "req" && m.st === "done") || m.kind === "sys");
+  const nAct = after.length;
+  let hint = "";
+  if (!btnMaster.hidden && isHost && !llmCfg().key) {
+    btnMaster.disabled = false; btnMaster.textContent = "Configurar o Mestre (chave grátis)";
+  } else if (!btnMaster.hidden) {
+    btnMaster.disabled = busy || pend.length > 0 || canWrite === false || !db || (!!me.id && !fichas[me.id]);
+    if (busy) btnMaster.textContent = "O Mestre está narrando...";
+    else if (pend.length) { btnMaster.textContent = "Aguardando rolagem de " + [...new Set(pend.map((m) => m.nome || "alguém"))].join(" e "); }
+    else if (li < 0 && !msgs.some((m) => m.kind === "player")) btnMaster.textContent = "Abrir a aventura";
+    else if (nAct > 0) {
+      btnMaster.textContent = "Chamar o Mestre (" + nAct + (nAct === 1 ? " novidade)" : " novidades)");
+      const w = waiting();
+      if (w.length && autoOn()) hint = "Rodada automática: falta agir " + w.join(" e ") + ". Você pode chamar o Mestre mesmo assim.";
+    } else btnMaster.textContent = "Continuar a cena";
+  }
+  $("#hint").textContent = hint;
+  const ro = !db || canWrite === false || (!!me.id && !fichas[me.id]);
+  msgBox.disabled = ro; $("#btn-send").disabled = ro; $("#btn-dice").disabled = ro;
+  msgBox.placeholder = (!!me.id && !fichas[me.id]) ? "Crie seu personagem para jogar." : (ro ? "Sem conexão com a mesa." : "O que seu personagem faz?");
+}
+
+/* ---------- ficha (modo jogo) ---------- */
+function sheetCard(uid, mineCard) {
+  const f = fichas[uid] || {};
+  const mx = f.pvMax || pvMaxOf(f), pv = f.pv == null ? mx : f.pv;
+  const card = mk("div", "card stack");
+  const head = mk("div", "sheet-head");
+  head.append(mk("h2", null, f.nome || "Sem nome"), mk("span", "sheet-sub", [f.especie, f.arq, f.idade ? f.idade + " anos" : ""].filter(Boolean).join(" · ")));
+  card.append(head);
+  if (f.origem) card.append(mk("div", "sheet-sub", "De " + f.origem));
+
+  const hp = mk("div", "hp");
+  if (mineCard) {
+    const m1 = mk("button", "btn", "−"); m1.type = "button"; m1.setAttribute("aria-label", "Tirar 1 PV");
+    const p1 = mk("button", "btn", "+"); p1.type = "button"; p1.setAttribute("aria-label", "Somar 1 PV");
+    m1.addEventListener("click", () => patchMine({ pv: Math.max(0, pv - 1) }));
+    p1.addEventListener("click", () => patchMine({ pv: Math.min(mx, pv + 1) }));
+    hp.append(m1, mk("span", "v", "PV " + pv + "/" + mx), p1);
+  } else hp.append(mk("span", "v", "PV " + pv + "/" + mx));
+  if (pv <= 0) hp.append(mk("span", "tag bad", "Incapacitado"));
+  card.append(hp);
+  card.append(derivedPanel(f));
+
+  const at = mk("div", "attrs");
+  ATR.forEach((a, i) => { const c = mk("div", "at"); c.append(mk("span", null, a), mk("b", null, String((f.atr || [])[i] || 0))); at.append(c); });
+  card.append(at);
+
+  const w = armaOf(f);
+  const kv = (k, v) => { const p = mk("p", "kv"); p.append(mk("b", null, k + ": "), document.createTextNode(v)); return p; };
+  card.append(kv("Especialidade", f.espec ? f.espec + " (+2)" : "nenhuma"));
+  card.append(kv("Treinadas", (f.trein || []).length ? f.trein.map((t) => t + " (+1)").join(", ") : "nenhuma"));
+  card.append(kv("Arma", w.n + " · " + w.dado + " · ataque " + sgn(atkOf(f))));
+  card.append(kv("Proteção", armOf(f).n + (armOf(f).r ? " (−" + armOf(f).r + " dano)" : "") + " · " + escOf(f).n));
+  if (f.traco) card.append(kv("Traço", f.traco));
+
+  if (mineCard) {
+    const lc = mk("label", null, "Itens"); const ta = mk("textarea"); ta.rows = 3; ta.maxLength = 400; ta.value = f.itens || "";
+    ta.addEventListener("change", () => patchMine({ itens: ta.value.trim() })); lc.append(ta); card.append(lc);
+    const lm = mk("label", null, "Moedas (coroas)"); const mi = mk("input"); mi.type = "number"; mi.inputMode = "numeric"; mi.min = "0"; mi.value = f.moedas == null ? 0 : f.moedas;
+    mi.addEventListener("change", () => patchMine({ moedas: Math.max(0, Math.floor(Number(mi.value) || 0)) })); lm.append(mi); card.append(lm);
+  } else {
+    card.append(kv("Itens", one(f.itens) || "nenhum"));
+    card.append(kv("Coroas", String(f.moedas == null ? 0 : f.moedas)));
+  }
+  const det = mk("details");
+  det.append(mk("summary", null, "História, objetivo e personalidade"));
+  [["Aparência", f.aparencia], ["História", f.hist], ["Objetivo", f.obj], ["Personalidade", f.pers]].forEach(([k, v]) => { if (v) det.append(kv(k, v)); });
+  card.append(det);
+  if (mineCard) {
+    const b = mk("button", "btn", "Editar personagem"); b.type = "button"; b.addEventListener("click", () => startWizard());
+    card.append(b);
+    card.append(mk("p", "muted small", "Evolução só quando o Mestre narrar um treino ou conquista. Combine com seu amigo antes de mudar atributos."));
+  }
+  return card;
+}
+let saving = Promise.resolve();
+function patchMine(obj) {
+  if (!db || !me.id || !fichas[me.id]) return;
+  saving = saving.then(() => db.doc("fichas/" + me.id).update(obj)).catch(dbError);
+}
+function renderFichas() {
+  if (wiz) return;
+  const host = $("#fichas");
+  const a = document.activeElement;
+  if (a && host.contains(a) && a.matches("input,textarea")) return;
+  host.replaceChildren();
+  if (!me.id) { host.append(mk("p", "muted", "Entre em uma mesa para ter um personagem.")); return; }
+  else if (!fichas[me.id]) {
+    const c = mk("div", "card stack");
+    c.append(mk("h2", null, "Seu personagem"), mk("p", "muted", "Um passo a passo guiado: quem é, estilo, atributos, perícias, equipamento e história."));
+    const b = mk("button", "btn primary", "Criar personagem"); b.type = "button"; b.addEventListener("click", () => startWizard());
+    c.append(b); host.append(c);
+  } else host.append(sheetCard(me.id, true));
+  Object.keys(fichas).filter((id) => id !== me.id && fichas[id] && fichas[id].nome).forEach((id) => host.append(sheetCard(id, false)));
+}
+function derivedPanel(f) {
+  const box = mk("div", "derived");
+  [["PV", pvMaxOf(f)], ["Defesa", defOf(f)], ["Iniciativa", sgn(atrV(f, "Agilidade"))], ["Absorve", armOf(f).r], ["Ataque", sgn(atkOf(f))]].forEach(([k, v]) => {
+    const c = mk("div", "dv"); c.append(mk("b", null, String(v)), mk("span", null, k)); box.append(c);
+  });
+  return box;
+}
+
+/* ---------- assistente de criação ---------- */
+const STEPS = ["Quem é", "Estilo", "Atributos", "Perícias", "Equipamento", "História"];
+const STEP_HINT = [
+  "Comece pelo básico. Você decide a personalidade depois; ninguém decide por você.",
+  "Escolha um ponto de partida: ele preenche atributos, perícias e equipamento, e você ajusta nos próximos passos. Não limita sua evolução.",
+  "Distribua 9 pontos entre os 6 atributos, no máximo 3 em cada um.",
+  "Escolha 1 especialidade (+2) e 3 perícias treinadas (+1). Toque numa perícia para alternar.",
+  "Arma, proteção e itens iniciais. Já vêm do seu estilo; troque se quiser.",
+  "Dê vida ao personagem. Quanto mais você escrever, mais o Mestre aproveita."
+];
+function startWizard() {
+  if (!me.id || canWrite === false) { notice("Entre em uma mesa primeiro."); return; }
+  const f = fichas[me.id];
+  wiz = { step: 0, edit: !!f, d: f ? JSON.parse(JSON.stringify(f)) : BLANK() };
+  wizShown = true;
+  showTab("personagem"); renderWizard();
+}
+function stepError(s, d) {
+  if (s === 0) { if (!d.nome.trim()) return "Dê um nome ao personagem."; if (!d.especie) return "Escolha uma espécie."; }
+  if (s === 1 && !d.arq) return "Escolha um estilo (ou Personalizado).";
+  if (s === 2) { const left = 9 - d.atr.reduce((a, b) => a + b, 0); if (left > 0) return "Faltam " + left + " ponto(s) para distribuir."; if (left < 0) return "Você usou " + (-left) + " ponto(s) a mais."; }
+  if (s === 3) { if (!d.espec) return "Escolha 1 especialidade."; if (d.trein.length < 3) return "Escolha mais " + (3 - d.trein.length) + " perícia(s) treinada(s)."; }
+  return "";
+}
+function field(label, val, on, o) {
+  o = o || {};
+  const l = mk("label", null, label);
+  const i = mk(o.area ? "textarea" : "input");
+  if (o.area) i.rows = o.rows || 3; else i.type = o.type || "text";
+  i.value = val == null ? "" : val;
+  if (o.max) i.maxLength = o.max;
+  if (o.ph) i.placeholder = o.ph;
+  if (o.num) i.inputMode = "numeric";
+  i.addEventListener("input", () => on(i.value));
+  l.append(i); return l;
+}
+function selectField(label, opts, val, on) {
+  const l = mk("label", null, label), s = mk("select");
+  opts.forEach(([v, t]) => { const o = mk("option", null, t); o.value = v; s.append(o); });
+  s.value = val; s.addEventListener("change", () => on(s.value));
+  l.append(s); return l;
+}
+function optBtn(title, desc, pressed) {
+  const b = mk("button", "opt"); b.type = "button"; b.setAttribute("aria-pressed", String(!!pressed));
+  b.append(mk("b", null, title)); if (desc) b.append(mk("span", null, desc));
+  return b;
+}
+function applyArq(a) {
+  const d = wiz.d;
+  d.arq = a.id; d.atr = a.atr.slice(); d.espec = a.esp; d.trein = a.trein.slice();
+  d.arma = a.arma; d.armadura = a.armadura; d.escudo = a.escudo; d.itens = a.itens.join("\n"); d.moedas = a.moedas;
+}
+function step0(d, body) {
+  body.append(field("Nome do personagem", d.nome, (v) => { d.nome = v; }, { max: 40, ph: "Ex.: Aria Valen" }));
+  body.append(mk("div", "lbl", "Espécie"));
+  const g = mk("div", "opts");
+  ESPECIES.forEach((e) => { const b = optBtn(e.id, e.d, d.especie === e.id); b.addEventListener("click", () => { d.especie = e.id; d.traco = e.t; renderWizard(); }); g.append(b); });
+  body.append(g);
+  body.append(field("Idade", d.idade, (v) => { d.idade = v.replace(/\D/g, "").slice(0, 4); }, { num: true, max: 4, ph: "Ex.: 27" }));
+  body.append(field("Aparência", d.aparencia, (v) => { d.aparencia = v; }, { area: true, rows: 2, max: 200, ph: "Cabelo, cicatrizes, roupas... (homem-fera: diga qual animal)" }));
+}
+function step1(d, body) {
+  const g = mk("div", "opts");
+  ARQ.forEach((a) => { const b = optBtn(a.id, a.d, d.arq === a.id); b.addEventListener("click", () => { applyArq(a); renderWizard(); }); g.append(b); });
+  body.append(g);
+}
+function step2(d, body) {
+  const left = 9 - d.atr.reduce((a, b) => a + b, 0);
+  body.append(mk("div", "pill" + (left === 0 ? " ok" : ""), "Pontos restantes: " + left + " de 9"));
+  ATR.forEach((a, i) => {
+    const row = mk("div", "arow"), txt = mk("div");
+    txt.append(mk("div", "n", a), mk("div", "d", ATR_DESC[a]));
+    const st = mk("div", "stp");
+    const mi = mk("button", null, "−"); mi.type = "button"; mi.disabled = d.atr[i] <= 0; mi.setAttribute("aria-label", "Menos " + a);
+    const pl = mk("button", null, "+"); pl.type = "button"; pl.disabled = d.atr[i] >= 3 || left <= 0; pl.setAttribute("aria-label", "Mais " + a);
+    mi.addEventListener("click", () => { d.atr[i]--; renderWizard(); });
+    pl.addEventListener("click", () => { d.atr[i]++; renderWizard(); });
+    st.append(mi, mk("span", "v", String(d.atr[i])), pl);
+    row.append(txt, st); body.append(row);
+  });
+  body.append(derivedPanel(d));
+}
+function step3(d, body) {
+  body.append(mk("div", "pill" + (d.espec && d.trein.length === 3 ? " ok" : ""), "Especialidade " + (d.espec ? 1 : 0) + "/1 · Treinadas " + d.trein.length + "/3"));
+  GRUPOS.forEach((gname) => {
+    const grp = mk("div", "skgroup"); grp.append(mk("h3", null, gname));
+    const wrap = mk("div", "skwrap");
+    Object.keys(PERICIAS).filter((n) => PERICIAS[n][1] === gname).forEach((n) => {
+      const level = d.espec === n ? 2 : (d.trein.includes(n) ? 1 : 0);
+      const b = mk("button", "sk"); b.type = "button"; b.dataset.l = String(level);
+      b.append(document.createTextNode(n));
+      if (level) b.append(mk("i", null, level === 2 ? "+2" : "+1"));
+      b.setAttribute("aria-label", n + (level === 2 ? ", especialista" : level === 1 ? ", treinada" : ", sem treino"));
+      b.addEventListener("click", () => cycleSkill(d, n, level));
+      wrap.append(b);
+    });
+    grp.append(wrap); body.append(grp);
+  });
+}
+function cycleSkill(d, n, level) {
+  const clear = () => { if (d.espec === n) d.espec = ""; d.trein = d.trein.filter((x) => x !== n); };
+  if (level === 0) {
+    if (d.trein.length < 3) d.trein.push(n);
+    else if (!d.espec) d.espec = n;
+    else notice("Você já escolheu tudo. Toque numa perícia marcada para liberar uma vaga.");
+  } else if (level === 1) {
+    clear(); if (!d.espec) d.espec = n; // vira especialista se houver vaga; senão fica sem treino
+  } else clear();
+  renderWizard();
+}
+function step4(d, body) {
+  body.append(selectField("Arma", ARMAS.map((a) => [a.n, a.n + " · " + a.dado + " · " + a.atr + "/" + a.per]), d.arma, (v) => { d.arma = v; renderWizard(); }));
+  body.append(selectField("Armadura", ARMADURAS.map((a) => [a.n, a.n + (a.r ? " · absorve " + a.r : "")]), d.armadura, (v) => { d.armadura = v; renderWizard(); }));
+  body.append(selectField("Escudo", ESCUDOS.map((a) => [a.n, a.n + (a.b ? " · Defesa +" + a.b : "")]), d.escudo, (v) => { d.escudo = v; renderWizard(); }));
+  body.append(field("Itens (um por linha)", d.itens, (v) => { d.itens = v; }, { area: true, rows: 4, max: 400 }));
+  body.append(field("Moedas (coroas)", d.moedas, (v) => { d.moedas = Math.max(0, Math.floor(Number(v) || 0)); }, { type: "number", num: true }));
+  body.append(derivedPanel(d));
+  body.append(mk("p", "hint", "Armaduras pesadas atrapalham furtividade e viagem; o Mestre leva isso em conta."));
+}
+function step5(d, body) {
+  body.append(selectField("Origem", ORIGENS.map((o) => [o[0], o[0] + " — " + o[1]]).concat([["", "Outra (conte na história)"]]), d.origem, (v) => { d.origem = v; }));
+  body.append(field("História pessoal", d.hist, (v) => { d.hist = v; }, { area: true, rows: 4, max: 500, ph: "De onde veio, o que viveu, o que deixou para trás." }));
+  body.append(field("Objetivo pessoal", d.obj, (v) => { d.obj = v; }, { max: 160, ph: "O que quer conquistar, encontrar ou provar." }));
+  body.append(field("Personalidade (você define)", d.pers, (v) => { d.pers = v; }, { max: 160, ph: "Ex.: curioso, teimoso, leal a quem confia" }));
+  body.append(mk("h3", null, "Resumo"));
+  body.append(derivedPanel(d));
+  const w = armaOf(d);
+  body.append(mk("p", "kv", d.nome + " · " + d.especie + " " + d.arq + " · " + w.n + " (" + w.dado + ") · especialista em " + d.espec + " · treinado em " + d.trein.join(", ") + "."));
+}
+function renderWizard() {
+  const host = $("#fichas"); host.replaceChildren();
+  const d = wiz.d, s = wiz.step, last = STEPS.length - 1;
+  const card = mk("div", "card stack");
+  card.append(mk("div", "muted small", (wiz.edit ? "Editando · " : "") + "Passo " + (s + 1) + " de " + STEPS.length + " · " + STEPS[s]));
+  const prog = mk("div", "prog");
+  STEPS.forEach((n, i) => prog.append(mk("span", "seg" + (i < s ? " done" : "") + (i === s ? " cur" : ""))));
+  card.append(prog, mk("h2", null, STEPS[s]), mk("p", "hint", STEP_HINT[s]));
+  const body = mk("div", "stack");
+  [step0, step1, step2, step3, step4, step5][s](d, body);
+  card.append(body);
+  const err = stepError(s, d);
+  card.append(mk("div", "err", err));
+  const nav = mk("div", "nav");
+  const back = mk("button", "btn", s === 0 ? (wiz.edit ? "Cancelar" : "") : "Voltar"); back.type = "button";
+  if (s === 0 && !wiz.edit) back.hidden = true;
+  back.addEventListener("click", () => { if (s === 0) { wiz = null; renderFichas(); } else { wiz.step--; renderWizard(); } });
+  const next = mk("button", "btn primary", s === last ? (wiz.edit ? "Salvar alterações" : "Criar personagem") : "Continuar"); next.type = "button";
+  next.disabled = !!err;
+  next.addEventListener("click", () => { if (s === last) finishWizard(); else { wiz.step++; renderWizard(); } });
+  nav.append(back, next); card.append(nav);
+  host.append(card);
+  $("#v-personagem").scrollTop = 0;
+}
+async function finishWizard() {
+  const d = wiz.d, old = fichas[me.id];
+  for (let i = 0; i < 4; i++) { const e = stepError(i, d); if (e) { wiz.step = i; renderWizard(); return; } }
+  const f = Object.assign({}, d, { nome: d.nome.trim() });
+  f.pvMax = pvMaxOf(f);
+  const oldMax = old ? (old.pvMax || pvMaxOf(old)) : f.pvMax, oldPv = old && old.pv != null ? old.pv : f.pvMax;
+  f.pv = old ? Math.max(0, Math.min(f.pvMax, oldPv + Math.max(0, f.pvMax - oldMax))) : f.pvMax;
+  try {
+    await db.doc("fichas/" + me.id).set(f);
+    wiz = null; renderAll(); showTab("aventura");
+    notice(old ? "Personagem atualizado." : "Personagem criado. Boa aventura!");
+  } catch (e) { dbError(e); }
+}
+
+/* ---------- Mestre: prompt enxuto, uma chamada por rodada ---------- */
+function histLine(m) {
+  if (m.kind === "master") return null;
+  if (m.kind === "player") return nameOf(m.uid) + ": " + clip(m.text, 300);
+  if (m.kind === "roll") return nameOf(m.uid) + " rolou " + (m.n > 1 ? m.n : "") + "d" + m.sides + ": " + m.total;
+  if (m.kind === "req") return m.st === "done" ? reqLine(m) : null;
+  if (m.kind === "sys") return clip(m.text, 300);
+  return null;
+}
+function playersBlock(full) {
+  return Object.keys(fichas).filter((id) => fichas[id] && fichas[id].nome).map((id) => {
+    const f = fichas[id], mx = f.pvMax || pvMaxOf(f);
+    let s = "- " + f.nome + " (" + f.especie + (f.traco ? ": " + f.traco : "") + "; " + (f.arq || "aventureiro") + "; " + (f.origem || "origem livre") + "; PV " + (f.pv == null ? mx : f.pv) + "/" + mx + ", Defesa " + defOf(f) + "; arma " + armaOf(f).n + "; itens: " + clip(one(f.itens), 80) + "; " + (f.moedas || 0) + " coroas)";
+    const extra = [];
+    if (f.pers) extra.push("personalidade: " + clip(one(f.pers), 80));
+    if (f.obj) extra.push("objetivo: " + clip(one(f.obj), 90));
+    if (full && f.hist) extra.push("história: " + clip(one(f.hist), 160));
+    if (full && f.aparencia) extra.push("aparência: " + clip(one(f.aparencia), 80));
+    if (extra.length) s += " " + extra.join(" | ");
+    return s;
+  });
+}
+function buildPrompt() {
+  const li = lastMasterIdx();
+  const opening = li < 0;
+  const parts = ["JOGADORES:", ...playersBlock(opening), "", "MEMÓRIA: " + (memS.fatos || "(vazia)"), "CENA: " + (memS.cena || "(início)")];
+  if (config.premissa && opening) parts.push("PONTO DE PARTIDA PEDIDO: " + clip(config.premissa, 400));
+  if (li >= 0) parts.push("", "ÚLTIMA FALA DO MESTRE: " + clip(msgs[li].text, 450));
+  const fresh = msgs.slice(li + 1).map(histLine).filter(Boolean).slice(-14);
+  if (fresh.length) parts.push("", "AÇÕES NOVAS:", ...fresh);
+  if (opening) parts.push("", "ABERTURA: faça a cena inicial" + (config.premissa ? " conforme o ponto de partida pedido" : " em Porto Vesperal, ao anoitecer") + ". Ligue sutilmente cada personagem à sua origem, sem forçar que se conheçam. Um gancho local pequeno, sem revelar a trama central. Termine esperando a ação dos jogadores.");
+  if ((memS.fatos || "").length > 1600) parts.push("", "A memória está longa: no #E inclua mem2 com a memória reescrita em até 700 caracteres (nomes, relações, dívidas, promessas, pistas, consequências pendentes).");
+  parts.push("", "Escreva agora só a próxima fala do Mestre e a linha #E.");
+  return parts.join("\n");
+}
+function buildRecapPrompt() {
+  const lines = msgs.slice(-14).map((m) => (m.kind === "master" ? "MESTRE: " + clip(m.text, 220) : histLine(m))).filter(Boolean);
+  return [
+    "Você é o Mestre de Genarion (RPG por texto, pt-BR). Escreva o RESUMO DE CONTINUIDADE desta sessão em até 110 palavras, 3ª pessoa: o que aconteceu, onde cada personagem está, pendências e perigos.",
+    "Depois escreva a última linha: #E {\"mem2\":\"memória permanente reescrita em até 700 caracteres, mantendo nomes, relações, dívidas, promessas, pistas e consequências\"}",
+    "", "JOGADORES:", ...playersBlock(false), "", "MEMÓRIA: " + (memS.fatos || "(vazia)"), "CENA: " + (memS.cena || "(início)"), "", "FINAL DA SESSÃO:", ...lines
+  ].join("\n");
+}
+function splitE(t) {
+  const i = t.lastIndexOf("#E");
+  if (i < 0) return { story: t, E: null };
+  const raw = t.slice(i + 2), a = raw.indexOf("{"), b = raw.lastIndexOf("}");
+  let E = null;
+  if (a >= 0 && b > a) { try { E = JSON.parse(raw.slice(a, b + 1)); } catch (_) { E = null; } }
+  return { story: t.slice(0, i).replace(/`+\s*$/, ""), E };
+}
+const cutE = (t) => { const i = t.indexOf("#E"); return i < 0 ? t : t.slice(0, i); };
+
+async function enemyAttack(arr, ts) {
+  const [alvo, bonus, dano, inim] = arr, who = clip(inim || "Inimigo", 30);
+  const hit = findPlayer(alvo);
+  if (!hit) return null;
+  const [uid, f] = hit, mx = f.pvMax || pvMaxOf(f), pv = f.pv == null ? mx : f.pv;
+  const p = parseExpr(String(dano || "1d4")) || { n: 1, sides: 4, mod: 0 };
+  const nat = rng(20), b = Number(bonus) || 0, tot = nat + b, def = defOf(f);
+  const ok = nat === 20 || (nat !== 1 && tot >= def);
+  let text = who + " ataca " + f.nome + ": " + nat + sgn(b) + " = " + tot + " contra Defesa " + def + " — ";
+  if (!ok) return { text: text + "erra.", ts };
+  const raw = rollDice(p).total * (nat === 20 ? 2 : 1), red = armOf(f).r, real = Math.max(0, raw - red), np = Math.max(0, pv - real);
+  text += "acerta" + (nat === 20 ? " (crítico)" : "") + "! Dano " + raw + (red ? " − " + red + " (armadura)" : "") + " = " + real + ". PV " + np + "/" + mx + (np === 0 ? " — incapacitado!" : "");
+  try { await db.doc("fichas/" + uid).update({ pv: np }); } catch (e) { dbError(e); }
+  return { text, ts };
+}
+async function applyE(E, ts) {
+  let k = 0;
+  const sys = async (text) => { await post({ kind: "sys", ts: ts + (k++), text }); };
+  for (const t of (Array.isArray(E.t) ? E.t : []).slice(0, 4)) {
+    if (!Array.isArray(t)) continue;
+    const hit = findPlayer(t[0]), per = String(t[1] || "Teste"), cd = Math.max(0, Math.min(30, Number(t[2]) || 0));
+    const atr = findAtr(t[3]) || (PERICIAS[per] ? PERICIAS[per][0] : "Percepção");
+    await post({ kind: "req", tipo: "t", ts: ts + (k++), st: "pend", uid: hit ? hit[0] : null, nome: hit ? hit[1].nome : "", per: cd === 0 && norm(per).startsWith("inic") ? "Iniciativa" : per, atr: cd === 0 && norm(per).startsWith("inic") ? "Agilidade" : atr, cd });
+  }
+  for (const a of (Array.isArray(E.a) ? E.a : []).slice(0, 3)) {
+    if (!Array.isArray(a)) continue;
+    const hit = findPlayer(a[0]);
+    await post({ kind: "req", tipo: "a", ts: ts + (k++), st: "pend", uid: hit ? hit[0] : null, nome: hit ? hit[1].nome : "", per: "Ataque", atr: "", cd: Math.max(1, Math.min(30, Number(a[1]) || 10)) });
+  }
+  for (const d of (Array.isArray(E.d) ? E.d : []).slice(0, 4)) {
+    if (!Array.isArray(d)) continue;
+    const r = await enemyAttack(d, ts + (k++));
+    if (r) await post({ kind: "sys", ts: r.ts, text: r.text });
+  }
+  for (const p of (Array.isArray(E.pv) ? E.pv : []).slice(0, 4)) {
+    if (!Array.isArray(p)) continue;
+    const hit = findPlayer(p[0]), dlt = Math.max(-60, Math.min(60, Math.round(Number(p[1]) || 0)));
+    if (!hit || !dlt) continue;
+    const [uid, f] = hit, mx = f.pvMax || pvMaxOf(f), pv = f.pv == null ? mx : f.pv, np = Math.max(0, Math.min(mx, pv + dlt));
+    try { await db.doc("fichas/" + uid).update({ pv: np }); } catch (e) { dbError(e); continue; }
+    await sys(f.nome + ": " + (dlt > 0 ? "recupera " + dlt : "perde " + (-dlt)) + " PV. PV " + np + "/" + mx + (np === 0 ? " — incapacitado!" : ""));
+  }
+  await updateMem(E);
+}
+async function updateMem(E) {
+  let fatos = memS.fatos || "";
+  if (Array.isArray(E.mem) && E.mem.length) fatos = (fatos ? fatos + "; " : "") + E.mem.slice(0, 4).map((s) => clip(one(s), 160)).join("; ");
+  if (typeof E.mem2 === "string" && E.mem2.trim()) fatos = clip(one(E.mem2), 1000);
+  if (fatos.length > 3200) fatos = fatos.slice(-3200).replace(/^[^;]*;\s*/, "");
+  const cena = typeof E.cena === "string" && E.cena.trim() ? clip(one(E.cena), 300) : (memS.cena || "");
+  if (fatos === (memS.fatos || "") && cena === (memS.cena || "")) return;
+  try { await db.doc("state/mem").set({ fatos, cena }); } catch (e) { dbError(e); }
+}
+
+const SYS_RECAP = "Você é o Mestre de Genarion, RPG de mesa por texto em pt-BR.";
+let autoBlockUntil = 0;
+function tell(text) {
+  notice(text);
+  if (isHost && guestConn && guestConn.open) { try { guestConn.send({ t: "note", m: text }); } catch (_) {} }
+}
+async function narrate(opts) {
+  opts = opts || {};
+  const quiet = !!opts.quiet, recap = !!opts.recap;
+  if (!isHost) {
+    if (!netOpen()) { notice("Sem conexão com o anfitrião."); return; }
+    try { hostConn.send({ t: "call", recap }); if (!quiet) notice("Pedido enviado ao Mestre."); } catch (_) { notice("Não consegui enviar o pedido."); }
+    return;
+  }
+  if (narrating) return;
+  if (!llmCfg().key) { if (!quiet) notice("Falta a chave do Mestre. Cole uma chave grátis aqui."); showTab("campanha"); return; }
+  narrating = true; liveText = ""; renderBar(); renderLog();
+  let claimed = false;
+  try {
+    await db.doc("state/turn").set({ busy: true, by: me.id || "", at: Date.now() });
+    claimed = true;
+    const prompt = recap ? buildRecapPrompt() : buildPrompt();
+    ctl = new AbortController();
+    const res = await callLLM(recap ? SYS_RECAP : MESTRE, prompt, { signal: ctl.signal });
+    const { story, E } = splitE(res.text);
+    const base = Date.now();
+    if (recap) {
+      if (story.trim()) await db.doc("state/resumo").set({ text: story.trim(), ts: base });
+      if (E) await updateMem(E);
+    } else if (!story.trim()) {
+      tell("O Mestre respondeu em branco. Toque para tentar de novo.");
+    } else {
+      await post({ kind: "master", ts: base, text: story.trim(), by: me.id || null });
+      if (E) await applyE(E, base + 1);
+    }
+    try { await db.doc("state/stats").set({ calls: (stats.calls || 0) + 1, inC: (stats.inC || 0) + prompt.length + (recap ? 0 : MESTRE.length), outC: (stats.outC || 0) + res.text.length, tok: (stats.tok || 0) + (res.tokens || 0) }); } catch (_) {}
+    if (res.truncated) tell("A fala foi cortada no limite. Chame de novo para o Mestre continuar.");
+  } catch (e) {
+    if (e && e.code === "cancelled") { /* parou de propósito */ }
+    else { autoBlockUntil = Date.now() + 30000; tell(llmCopy(e)); }
+  } finally {
+    if (claimed) { try { await db.doc("state/turn").set({ busy: false, by: "", at: Date.now() }); } catch (_) {} }
+    narrating = false; liveText = ""; ctl = null;
+    renderBar(); renderLog();
+  }
+}
+
+/* rodada automática (só o anfitrião chama a IA): quando todos agiram ou todas as rolagens pedidas foram feitas */
+function readyForMaster() {
+  if (!isHost || !llmCfg().key || isBusy() || pendReqs().length || Date.now() < autoBlockUntil) return false;
+  const li = lastMasterIdx(), after = msgs.slice(li + 1);
+  if (li < 0) return false;
+  if (after.some((m) => m.kind === "req")) return true;
+  const acted = new Set(after.filter((m) => m.kind === "player").map((m) => m.uid));
+  const ids = Object.keys(fichas).filter((id) => fichas[id] && fichas[id].nome);
+  return ids.length > 0 && ids.every((id) => acted.has(id));
+}
+function maybeAuto() {
+  if (!pendingAuto || !isHost) return;
+  if (autoOn() && readyForMaster()) { pendingAuto = false; narrate({ quiet: true }); }
+  else if (Date.now() - pendingAutoAt > 3000) pendingAuto = false;
+}
+
+/* ---------- campanha e abas ---------- */
+function renderCfg() {
+  const a = document.activeElement;
+  if (!(a && $("#cfg").contains(a))) $("#cfg-premissa").value = config.premissa || "";
+  $("#recap-txt").textContent = resumo && resumo.text ? resumo.text : "Ainda não há resumo. Ao encerrar a noite, gere um: ele guarda a história para a próxima sessão.";
+  $("#recap-txt").classList.toggle("muted", !(resumo && resumo.text));
+  const tok = stats.tok || Math.round(((stats.inC || 0) + (stats.outC || 0)) / 3.6);
+  $("#statsline").textContent = "Chamadas do Mestre nesta aventura: " + (stats.calls || 0) + " · uso estimado de " + (tok >= 1000 ? (tok / 1000).toFixed(1) + " mil" : tok) + " tokens.";
+  $("#btn-recap").disabled = !(isHost || netOpen()) || isBusy() || !msgs.length;
+}
+function renderAll() { renderLog(); renderBar(); renderStrip(); renderFichas(); renderCfg(); }
+function showTab(name) {
+  ["aventura", "personagem", "campanha"].forEach((t) => {
+    $("#v-" + t).hidden = !room || t !== name;
+    $("#t-" + t).setAttribute("aria-selected", String(t === name));
+  });
+  if (name === "aventura") log.scrollTop = log.scrollHeight;
+  if (name === "personagem") { if (wiz) renderWizard(); else renderFichas(); }
+}
+["aventura", "personagem", "campanha"].forEach((t) => $("#t-" + t).addEventListener("click", () => showTab(t)));
+
+/* ---------- eventos ---------- */
+DADOS.forEach((s) => {
+  const b = mk("button", "chip", "d" + s); b.type = "button";
+  b.addEventListener("click", () => doRoll("1d" + s));
+  $("#chips").append(b);
+});
+$("#btn-roll").addEventListener("click", () => { const v = $("#expr").value; if (v.trim()) doRoll(v); });
+$("#expr").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#btn-roll").click(); } });
+$("#btn-dice").addEventListener("click", () => {
+  tray.hidden = !tray.hidden;
+  $("#btn-dice").setAttribute("aria-expanded", String(!tray.hidden));
+  log.scrollTop = log.scrollHeight;
+});
+const autosize = () => { msgBox.style.height = "auto"; msgBox.style.height = Math.min(msgBox.scrollHeight, 120) + "px"; };
+msgBox.addEventListener("input", autosize);
+msgBox.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); composer.requestSubmit(); } });
+composer.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const t = msgBox.value.trim();
+  if (!t || !me.id || !fichas[me.id]) return;
+  msgBox.value = ""; autosize();
+  const ok = await post({ kind: "player", uid: me.id, ts: Date.now(), text: t });
+  if (ok) { pendingAuto = true; pendingAutoAt = Date.now(); maybeAuto(); }
+});
+btnMaster.addEventListener("click", () => { if (isHost && !llmCfg().key) { showTab("campanha"); $("#card-llm").scrollIntoView({ block: "start" }); return; } narrate(); });
+btnStop.addEventListener("click", () => { if (ctl) ctl.abort(); });
+$("#btn-recap").addEventListener("click", () => narrate({ recap: true }));
+const autoBox = $("#auto");
+autoBox.checked = store.get("gen-auto") !== "0";
+autoBox.addEventListener("change", () => { store.set("gen-auto", autoBox.checked ? "1" : "0"); if (isHost) db.doc("state/opt").set({ auto: autoBox.checked }).catch(() => {}); });
+$("#cfg").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!db) return;
+  try { await db.doc("campanha/config").set({ premissa: $("#cfg-premissa").value.trim(), ts: Date.now() }); notice("Salvo. Vale na abertura da aventura."); }
+  catch (err) { dbError(err); }
+});
+let clearStep = 0;
+$("#btn-clear").addEventListener("click", async () => {
+  const b = $("#btn-clear");
+  if (clearStep === 0) { clearStep = 1; b.textContent = "Toque de novo para apagar tudo"; setTimeout(() => { clearStep = 0; b.textContent = "Apagar história"; }, 5000); return; }
+  clearStep = 0; b.disabled = true; b.textContent = "Apagando...";
+  try {
+    for (;;) {
+      const s = await db.collection("msgs").limit(100).get();
+      if (s.empty) break;
+      for (const d of s.docs) await db.doc("msgs/" + d.id).delete();
+    }
+    await db.doc("state/mem").set({ fatos: "", cena: "" });
+    await db.doc("state/resumo").set({ text: "", ts: Date.now() });
+    await db.doc("state/turn").set({ busy: false, by: "", at: Date.now() });
+    notice("A história foi apagada.");
+  } catch (err) { dbError(err); }
+  b.disabled = false; b.textContent = "Apagar história";
+});
+
+/* ---------- Mestre de IA (só o anfitrião chama; chave fica neste navegador) ---------- */
+const PROVS = {
+  gemini: { base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-flash-lite-latest" },
+  groq: { base: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile" },
+  openrouter: { base: "https://openrouter.ai/api/v1", model: "openrouter/free" },
+  custom: { base: "", model: "" }
+};
+function llmCfg() {
+  let c = {};
+  try { c = JSON.parse(store.get("gen-llm") || "{}") || {}; } catch (_) {}
+  const prov = PROVS[c.prov] ? c.prov : "gemini";
+  return { prov, key: (c.key || "").trim(), model: (c.model || "").trim() || PROVS[prov].model, url: (c.url || "").trim() || PROVS[prov].base };
+}
+const saveLlm = (c) => store.set("gen-llm", JSON.stringify({ prov: c.prov, key: c.key, model: c.model, url: c.url }));
+const LLM_ERR = {
+  nokey: "Falta a chave do Mestre. Cole uma chave grátis em Campanha.",
+  auth: "A chave foi recusada. Confira a chave em Campanha > Mestre de IA.",
+  limit: "Limite do plano grátis atingido (por minuto ou por dia). Espere um pouco e tente de novo.",
+  model: "Modelo não encontrado. Em Campanha, use Buscar modelos.",
+  bad: "O serviço recusou o pedido.",
+  net: "Não consegui alcançar o serviço de IA (rede ou bloqueio do navegador). Use Testar conexão em Campanha.",
+  server: "O serviço de IA está instável agora. Tente de novo em instantes.",
+  blocked: "O serviço bloqueou essa cena. Mude o rumo da ação e chame de novo.",
+  empty: "O Mestre respondeu em branco. Toque para tentar de novo."
+};
+const llmCopy = (e) => (e && e.code && LLM_ERR[e.code] ? LLM_ERR[e.code] + (e.code === "bad" && e.detail ? " (" + clip(e.detail, 140) + ")" : "") : "O Mestre travou no meio da cena. Toque para tentar de novo.");
+const lerr = (code, detail) => Object.assign(new Error(code), { code, detail });
+async function httpJson(url, init) {
+  let r;
+  try { r = await fetch(url, init); }
+  catch (e) { if (e && e.name === "AbortError") throw lerr("cancelled"); throw lerr("net"); }
+  let body = null;
+  try { body = await r.json(); } catch (_) {}
+  if (r.ok) return body || {};
+  const msg = (body && body.error && (body.error.message || body.error)) || "";
+  if (r.status === 401 || r.status === 403) throw lerr("auth", String(msg));
+  if (r.status === 404) throw lerr("model", String(msg));
+  if (r.status === 429) throw lerr("limit", String(msg));
+  if (r.status >= 500) throw lerr("server", String(msg));
+  throw lerr("bad", String(msg));
+}
+async function callLLM(system, user, o) {
+  o = o || {};
+  const c = llmCfg();
+  if (!c.key) throw lerr("nokey");
+  const maxTok = o.maxTokens || 1500;
+  const go = async () => {
+    if (c.prov === "gemini") {
+      const model = c.model.replace(/^models\//, "");
+      const url = c.url.replace(/\/$/, "") + "/models/" + encodeURIComponent(model) + ":generateContent";
+      const mkBody = (think) => {
+        const g = { temperature: 0.85, maxOutputTokens: maxTok };
+        if (think) g.thinkingConfig = { thinkingBudget: 0 };
+        const b = { contents: [{ role: "user", parts: [{ text: user }] }], generationConfig: g };
+        if (system) b.systemInstruction = { parts: [{ text: system }] };
+        return JSON.stringify(b);
+      };
+      const hdr = { "Content-Type": "application/json", "x-goog-api-key": c.key };
+      let j;
+      try { j = await httpJson(url, { method: "POST", headers: hdr, body: mkBody(true), signal: o.signal }); }
+      catch (e) { if (e.code === "bad" && /think/i.test(e.detail || "")) j = await httpJson(url, { method: "POST", headers: hdr, body: mkBody(false), signal: o.signal }); else throw e; }
+      const cand = j.candidates && j.candidates[0];
+      const text = cand && cand.content && cand.content.parts ? cand.content.parts.map((p) => (p.thought ? "" : p.text || "")).join("") : "";
+      if (!text.trim()) { if (cand && /SAFETY|BLOCK|PROHIB/i.test(cand.finishReason || "")) throw lerr("blocked"); if (j.promptFeedback && j.promptFeedback.blockReason) throw lerr("blocked"); throw lerr("empty"); }
+      return { text, truncated: !!(cand && cand.finishReason === "MAX_TOKENS"), tokens: (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0 };
+    }
+    const url = c.url.replace(/\/$/, "") + "/chat/completions";
+    const b = { model: c.model, messages: (system ? [{ role: "system", content: system }] : []).concat([{ role: "user", content: user }]), temperature: 0.85, max_tokens: maxTok };
+    if (/gpt-oss/i.test(c.model)) b.reasoning_effort = "low";
+    const j = await httpJson(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + c.key }, body: JSON.stringify(b), signal: o.signal });
+    const ch = j.choices && j.choices[0];
+    const text = ((ch && ch.message && ch.message.content) || "").replace(/<think>[\s\S]*?<\/think>/g, "");
+    if (!text.trim()) throw lerr("empty");
+    return { text, truncated: !!(ch && ch.finish_reason === "length"), tokens: (j.usage && j.usage.total_tokens) || 0 };
+  };
+  try { return await go(); }
+  catch (e) {
+    if (e.code === "server" && !(o.signal && o.signal.aborted)) { await new Promise((r) => setTimeout(r, 2000)); return await go(); }
+    throw e;
+  }
+}
+async function listModels() {
+  const c = llmCfg();
+  if (!c.key) throw lerr("nokey");
+  if (c.prov === "gemini") {
+    const j = await httpJson(c.url.replace(/\/$/, "") + "/models?pageSize=100", { headers: { "x-goog-api-key": c.key } });
+    return (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes("generateContent")).map((m) => String(m.name).replace(/^models\//, "")).sort();
+  }
+  const j = await httpJson(c.url.replace(/\/$/, "") + "/models", { headers: { Authorization: "Bearer " + c.key } });
+  return (j.data || []).map((m) => m.id).filter(Boolean).sort();
+}
+
+/* ---------- mini-banco replicado (o anfitrião é a fonte da verdade) ---------- */
+const PREFIX = "genarion-";
+const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }] };
+const CODE_CH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const newCode = () => { const a = new Uint32Array(6); crypto.getRandomValues(a); return [...a].map((n) => CODE_CH[n % CODE_CH.length]).join(""); };
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+let UID = store.get("gen-uid") || ("u" + newId());
+store.set("gen-uid", UID);
+me.id = UID;
+
+const data = new Map();
+const subs = new Set();
+let peer = null, hostConn = null, guestConn = null, saveT = null, retryT = null, leaving = false, everSynced = false, hostTries = 0;
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const notifyAll = () => setTimeout(() => subs.forEach((f) => f()), 0);
+const netOpen = () => !!(hostConn && hostConn.open && synced);
+function snapOf(path) {
+  const d = data.get(path);
+  return { id: path.split("/").pop(), exists: d !== undefined, data: () => (d ? clone(d) : undefined), metadata: { fromCache: !synced, hasPendingWrites: false } };
+}
+const colDocs = (col) => [...data.keys()].filter((k) => k.startsWith(col + "/") && k.slice(col.length + 1).indexOf("/") < 0);
+function applyLocal(path, mode, obj) {
+  if (mode === "delete") data.delete(path);
+  else if (mode === "set") data.set(path, clone(obj));
+  else data.set(path, Object.assign({}, data.get(path) || {}, clone(obj)));
+  notifyAll();
+}
+function afterWrite(path, mode, obj) {
+  if (path.startsWith("msgs/") && obj && mode !== "delete" && (obj.kind === "player" || obj.st === "done")) { pendingAuto = true; pendingAutoAt = Date.now(); }
+}
+const bcast = (m) => { if (guestConn && guestConn.open) { try { guestConn.send(m); } catch (_) {} } };
+async function write(path, mode, obj) {
+  if (isHost) { applyLocal(path, mode, obj); afterWrite(path, mode, obj); bcast({ t: "w", p: path, m: mode, d: obj }); scheduleSave(); return; }
+  if (!hostConn || !hostConn.open) throw { code: "offline" };
+  applyLocal(path, mode, obj);
+  hostConn.send({ t: "op", p: path, m: mode, d: obj });
+}
+function docRef(path) {
+  return {
+    id: path.split("/").pop(), path,
+    get: async () => snapOf(path),
+    set: (o) => write(path, "set", o),
+    update: (o) => write(path, "update", o),
+    delete: () => write(path, "delete", null),
+    onSnapshot(next) {
+      let last;
+      const f = () => { const sn = JSON.stringify([data.get(path), synced]); if (sn === last) return; last = sn; next(snapOf(path)); };
+      subs.add(f); setTimeout(f, 0); return () => subs.delete(f);
+    }
+  };
+}
+function query(col, o) {
+  const run = () => {
+    let ids = colDocs(col);
+    if (o.ord) ids.sort((a, b) => { const x = data.get(a)[o.ord[0]], y = data.get(b)[o.ord[0]]; return (x < y ? -1 : x > y ? 1 : 0) * (o.ord[1] === "desc" ? -1 : 1); });
+    if (o.lim) ids = ids.slice(0, o.lim);
+    return ids;
+  };
+  const mkSnap = () => { const docs = run().map(snapOf); return { docs, size: docs.length, empty: !docs.length, metadata: { fromCache: !synced, hasPendingWrites: false } }; };
+  return {
+    orderBy: (f, d) => query(col, Object.assign({}, o, { ord: [f, d || "asc"] })),
+    limit: (n) => query(col, Object.assign({}, o, { lim: n })),
+    get: async () => mkSnap(),
+    onSnapshot(next) {
+      let last;
+      const f = () => { const sn = JSON.stringify([run().map((p) => data.get(p)), synced]); if (sn === last) return; last = sn; next(mkSnap()); };
+      subs.add(f); setTimeout(f, 0); return () => subs.delete(f);
+    }
+  };
+}
+db = {
+  doc: docRef,
+  collection: (col) => Object.assign(query(col, {}), { add: async (o) => { const id = newId(); await write(col + "/" + id, "set", o); return docRef(col + "/" + id); } })
+};
+
+/* ---------- salvar / exportar (anfitrião) ---------- */
+function snapshotData() { return { app: "genarion", v: 1, room, hostUid, savedAt: Date.now(), data: [...data.entries()] }; }
+function scheduleSave() {
+  if (!isHost) return;
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    const ids = colDocs("msgs");
+    if (ids.length > 400) { ids.sort((a, b) => (data.get(a).ts || 0) - (data.get(b).ts || 0)); ids.slice(0, ids.length - 300).forEach((p) => { data.delete(p); bcast({ t: "w", p, m: "delete" }); }); }
+    store.set("gen-save", JSON.stringify(snapshotData()));
+  }, 700);
+}
+function loadSave() { try { const o = JSON.parse(store.get("gen-save") || "null"); return o && o.app === "genarion" && o.room && Array.isArray(o.data) ? o : null; } catch (_) { return null; } }
+
+/* ---------- rede ---------- */
+const subsOff = [];
+function setNet(txt) {
+  setStatus(txt);
+  const r = $("#room-status");
+  if (r) r.textContent = txt || "";
+}
+function peerOpts() { return { config: ICE, debug: 0 }; }
+function startHost(code, restore) {
+  leaving = false; isHost = true; room = code; synced = true; everSynced = true; hostTries = 0;
+  data.clear();
+  if (restore) { restore.data.forEach(([k, v]) => data.set(k, v)); hostUid = restore.hostUid; UID = hostUid; store.set("gen-uid", UID); me.id = UID; }
+  else { hostUid = UID; }
+  data.set("state/host", { uid: hostUid });
+  data.set("state/turn", { busy: false, by: "", at: Date.now() });
+  data.set("state/opt", { auto: store.get("gen-auto") !== "0" });
+  scheduleSave();
+  openHostPeer();
+  enterRoom();
+}
+function openHostPeer() {
+  if (leaving || !isHost) return;
+  try { if (peer) peer.destroy(); } catch (_) {}
+  setNet("Conectando à sala...");
+  peer = new Peer(PREFIX + room, peerOpts());
+  const mine = peer;
+  peer.on("open", () => { if (peer === mine) { hostTries = 0; hostStatus(); } });
+  peer.on("connection", hostAccept);
+  peer.on("disconnected", () => { if (peer === mine && !leaving) { setNet("Reconectando ao servidor..."); setTimeout(() => { try { if (peer === mine && !mine.destroyed) mine.reconnect(); } catch (_) {} }, 2000); } });
+  peer.on("error", (e) => {
+    if (leaving || peer !== mine) return;
+    const ty = e && e.type;
+    if (ty === "unavailable-id") {
+      if (++hostTries > 10) { setNet("Não consegui abrir a sala. Saia e entre de novo."); return; }
+      setNet("Sala ocupada; tentando de novo..."); setTimeout(openHostPeer, 4000);
+    } else if (ty === "network" || ty === "server-error" || ty === "socket-error" || ty === "socket-closed") {
+      setNet("Sem conexão com o servidor de salas. Tentando de novo..."); setTimeout(openHostPeer, 5000);
+    }
+  });
+}
+function hostStatus() { setNet(guestConn && guestConn.open ? "Amigo conectado." : "Sala aberta. Aguardando seu amigo."); }
+function hostAccept(conn) {
+  conn.on("data", (m) => {
+    if (!m || typeof m !== "object") return;
+    if (m.t === "hi") {
+      const uid = String(m.uid || "");
+      if (!uid || uid === hostUid) { conn.close(); return; }
+      if (guestConn && guestConn.open && guestConn.uid && guestConn.uid !== uid) { try { conn.send({ t: "full_room" }); } catch (_) {} setTimeout(() => conn.close(), 300); return; }
+      if (guestConn && guestConn !== conn) { const old = guestConn; guestConn = null; try { old.close(); } catch (_) {} }
+      guestConn = conn; conn.uid = uid;
+      const entries = [...data.entries()].filter(([k]) => !k.startsWith("msgs/")).concat(colDocs("msgs").map((k) => [k, data.get(k)]).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0)).slice(-200));
+      conn.send({ t: "full", hostUid, d: entries });
+      hostStatus(); renderAll();
+    } else if (conn === guestConn && m.t === "op") {
+      const p = String(m.p || ""), mode = m.m;
+      const okPath = (p.startsWith("msgs/") && p.indexOf("/", 5) < 0) || p === "fichas/" + conn.uid;
+      if (!okPath || !/^(set|update|delete)$/.test(mode)) return;
+      write(p, mode, m.d).catch(() => {});
+    } else if (conn === guestConn && m.t === "call") {
+      if (narrating) { try { conn.send({ t: "note", m: "O Mestre já está narrando." }); } catch (_) {} return; }
+      narrate({ recap: !!m.recap, quiet: true });
+    }
+  });
+  const gone = () => { if (guestConn === conn) { guestConn = null; hostStatus(); renderAll(); } };
+  conn.on("close", gone); conn.on("error", gone);
+}
+function startGuest(code) {
+  leaving = false; isHost = false; room = code; synced = false; everSynced = false; hostUid = null;
+  data.clear(); notifyAll();
+  enterRoom();
+  setNet("Conectando ao anfitrião...");
+  openGuestPeer();
+}
+function openGuestPeer() {
+  if (leaving) return;
+  try { if (peer) peer.destroy(); } catch (_) {}
+  peer = new Peer(undefined, peerOpts());
+  const mine = peer;
+  peer.on("open", () => { if (peer === mine) guestConnect(); });
+  peer.on("error", (e) => {
+    if (leaving || peer !== mine) return;
+    const ty = e && e.type;
+    if (ty === "peer-unavailable") {
+      if (!everSynced) { leaveRoom("Sala não encontrada. Confira o código e se o anfitrião está com a página aberta."); return; }
+      setNet("Anfitrião fora do ar. Tentando de novo..."); scheduleRetry();
+    } else { setNet("Sem conexão. Tentando de novo..."); scheduleRetry(8000, true); }
+  });
+  peer.on("disconnected", () => { if (peer === mine && !leaving) { try { mine.reconnect(); } catch (_) {} } });
+}
+function scheduleRetry(ms, fresh) {
+  clearTimeout(retryT);
+  retryT = setTimeout(() => { if (leaving || isHost) return; if (fresh || !peer || peer.destroyed || peer.disconnected) openGuestPeer(); else guestConnect(); }, ms || 3000);
+}
+function guestConnect() {
+  if (leaving || !peer || peer.destroyed) return;
+  let c;
+  try { c = peer.connect(PREFIX + room, { reliable: true }); } catch (_) { scheduleRetry(5000, true); return; }
+  hostConn = c;
+  let opened = false;
+  const to = setTimeout(() => { if (!opened && hostConn === c) { try { c.close(); } catch (_) {} setNet("Sem resposta do anfitrião. Tentando de novo..."); scheduleRetry(); } }, 15000);
+  c.on("open", () => { opened = true; clearTimeout(to); try { c.send({ t: "hi", uid: UID }); } catch (_) {} });
+  c.on("data", (m) => {
+    if (!m || typeof m !== "object") return;
+    if (m.t === "full") {
+      data.clear(); hostUid = m.hostUid;
+      (m.d || []).forEach(([k, v]) => data.set(k, v));
+      synced = true; everSynced = true; store.set("gen-guest", room);
+      setNet("Conectado ao anfitrião."); notifyAll(); renderAll();
+    } else if (m.t === "w") {
+      applyLocal(String(m.p), m.m, m.d);
+    } else if (m.t === "note") { notice(String(m.m || "")); }
+    else if (m.t === "full_room") { leaveRoom("Esta mesa já tem dois jogadores."); }
+  });
+  const down = () => {
+    clearTimeout(to);
+    if (hostConn !== c || leaving) return;
+    synced = false; notifyAll(); renderAll();
+    setNet("Conexão perdida. Reconectando...");
+    if (!everSynced) { leaveRoom("Não consegui conectar ao anfitrião. Confira o código e tente de novo."); return; }
+    scheduleRetry();
+  };
+  c.on("close", down); c.on("error", down);
+}
+
+/* ---------- entrar / sair da sala ---------- */
+function resetState() {
+  msgs = []; fichas = {}; config = {}; turn = null; memS = {}; stats = {}; resumo = null; optS = {};
+  narrating = false; liveText = ""; gotLive = false; firstRender = true; gotFichas = false; wiz = null; wizShown = false; pendingAuto = false;
+}
+function subscribeAll() {
+  subsOff.push(db.collection("msgs").orderBy("ts", "desc").limit(120).onSnapshot((snap) => {
+    msgs = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())).reverse();
+    renderAll(); maybeAuto();
+  }));
+  subsOff.push(db.collection("fichas").onSnapshot((snap) => {
+    fichas = {}; snap.docs.forEach((d) => { fichas[d.id] = d.data(); });
+    renderAll();
+    if (!gotFichas && !snap.metadata.fromCache) {
+      gotFichas = true;
+      if (me.id && !fichas[me.id] && !wizShown) startWizard();
+    }
+  }));
+  subsOff.push(db.doc("campanha/config").onSnapshot((s) => { config = s.exists ? s.data() : {}; renderCfg(); }));
+  subsOff.push(db.doc("state/turn").onSnapshot((s) => { turn = s.exists ? s.data() : null; renderBar(); renderLog(); }));
+  subsOff.push(db.doc("state/mem").onSnapshot((s) => { memS = s.exists ? s.data() : {}; }));
+  subsOff.push(db.doc("state/stats").onSnapshot((s) => { stats = s.exists ? s.data() : {}; renderCfg(); }));
+  subsOff.push(db.doc("state/resumo").onSnapshot((s) => { resumo = s.exists ? s.data() : null; renderLog(); renderCfg(); }));
+  subsOff.push(db.doc("state/opt").onSnapshot((s) => { optS = s.exists ? s.data() : {}; renderBar(); }));
+  subsOff.push(db.doc("state/host").onSnapshot((s) => { if (s.exists) { hostUid = s.data().uid; renderAll(); } }));
+}
+function enterRoom() {
+  resetState();
+  $("#lobby").hidden = true;
+  $(".tabs").hidden = false; $("#strip").hidden = false;
+  $("#room-code").textContent = room;
+  $("#card-llm").hidden = !isHost; $("#card-save").hidden = !isHost; $("#danger").hidden = !isHost; $("#auto-l").hidden = !isHost;
+  $("#btn-leave").textContent = isHost ? "Sair da mesa (ela fica salva aqui)" : "Sair da mesa";
+  try { history.replaceState(null, "", "#sala=" + room); } catch (_) {}
+  subscribeAll();
+  renderAll(); renderLlm();
+  showTab("aventura");
+}
+function leaveRoom(msg) {
+  leaving = true; clearTimeout(retryT); clearTimeout(saveT);
+  if (isHost && room) store.set("gen-save", JSON.stringify(snapshotData()));
+  if (!isHost) store.set("gen-guest", "");
+  subsOff.splice(0).forEach((f) => f());
+  try { if (hostConn) hostConn.close(); } catch (_) {}
+  try { if (guestConn) guestConn.close(); } catch (_) {}
+  try { if (peer) peer.destroy(); } catch (_) {}
+  peer = null; hostConn = null; guestConn = null; room = null; isHost = false; synced = false;
+  if (ctl) ctl.abort();
+  data.clear(); resetState(); setStatus("");
+  $(".tabs").hidden = true; $("#strip").hidden = true;
+  ["aventura", "personagem", "campanha"].forEach((t) => { $("#v-" + t).hidden = true; });
+  $("#lobby").hidden = false;
+  try { history.replaceState(null, "", location.pathname + location.search); } catch (_) {}
+  renderLobby(msg || "");
+}
+function renderLobby(err) {
+  $("#lb-err").textContent = err || "";
+  const sv = loadSave(), g = store.get("gen-guest");
+  const card = $("#lb-continue");
+  if (sv) { card.hidden = false; $("#lb-continue-txt").textContent = "Mesa " + sv.room + " (você é o anfitrião). " + sv.data.filter(([k]) => k.startsWith("msgs/")).length + " mensagens guardadas."; $("#btn-continue").dataset.mode = "host"; }
+  else if (g) { card.hidden = false; $("#lb-continue-txt").textContent = "Voltar para a mesa " + g + " do seu amigo."; $("#btn-continue").dataset.mode = "guest"; }
+  else card.hidden = true;
+}
+function importObj(o) {
+  if (!o || o.app !== "genarion" || !Array.isArray(o.data) || !o.room) throw new Error("bad");
+  o.data = o.data.filter(([k, v]) => typeof k === "string" && v && typeof v === "object" && !k.startsWith("state/turn"));
+  return o;
+}
+function readFile(inp, cb) {
+  const f = inp.files && inp.files[0]; inp.value = "";
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { try { cb(importObj(JSON.parse(String(r.result)))); } catch (_) { notice("Esse arquivo não parece uma mesa do Genarion."); } };
+  r.readAsText(f);
+}
+
+/* ---------- eventos da sala e do Mestre ---------- */
+let hostStep = 0;
+$("#btn-host").addEventListener("click", () => {
+  const b = $("#btn-host");
+  if (loadSave() && hostStep === 0) { hostStep = 1; b.textContent = "Isso substitui a mesa salva. Toque de novo"; setTimeout(() => { hostStep = 0; b.textContent = "Criar mesa nova"; }, 5000); return; }
+  hostStep = 0; b.textContent = "Criar mesa nova";
+  startHost(newCode(), null);
+});
+$("#btn-continue").addEventListener("click", () => {
+  if ($("#btn-continue").dataset.mode === "host") { const sv = loadSave(); if (sv) startHost(sv.room, sv); }
+  else { const g = store.get("gen-guest"); if (g) startGuest(g); }
+});
+const doJoin = () => {
+  const code = $("#join-code").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (code.length !== 6) { $("#lb-err").textContent = "O código tem 6 letras ou números."; return; }
+  $("#lb-err").textContent = ""; startGuest(code);
+};
+$("#btn-join").addEventListener("click", doJoin);
+$("#join-code").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doJoin(); } });
+$("#btn-leave").addEventListener("click", () => leaveRoom());
+$("#btn-copy").addEventListener("click", async () => {
+  const link = location.origin + location.pathname + "#sala=" + room;
+  try { await navigator.clipboard.writeText(link); notice("Link copiado."); }
+  catch (_) { try { window.prompt("Copie o link:", link); } catch (__) {} }
+});
+$("#btn-lb-import").addEventListener("click", () => $("#lb-file").click());
+$("#lb-file").addEventListener("change", () => readFile($("#lb-file"), (o) => { store.set("gen-save", JSON.stringify(o)); renderLobby("Mesa importada. Toque em Continuar mesa."); }));
+$("#btn-export").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(snapshotData())], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "genarion-" + room + ".json";
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+$("#btn-import").addEventListener("click", () => $("#file-import").click());
+$("#file-import").addEventListener("change", () => readFile($("#file-import"), (o) => {
+  if (!isHost) return;
+  const keepRoom = room;
+  const entries = o.data.filter(([k]) => !k.startsWith("state/host") && !k.startsWith("state/opt"));
+  const mine = [...data.keys()];
+  mine.forEach((k) => { if (!k.startsWith("state/host") && !k.startsWith("state/opt") && !k.startsWith("state/turn")) data.delete(k); });
+  entries.forEach(([k, v]) => data.set(k, v));
+  if (o.hostUid && o.hostUid !== hostUid) {
+    const old = o.hostUid;
+    if (data.has("fichas/" + old)) { data.set("fichas/" + hostUid, data.get("fichas/" + old)); data.delete("fichas/" + old); }
+    data.forEach((v, k) => { if (k.startsWith("msgs/") && v.uid === old) v.uid = hostUid; });
+  }
+  room = keepRoom; notifyAll(); scheduleSave();
+  if (guestConn && guestConn.open) { const es = [...data.entries()].filter(([k]) => !k.startsWith("msgs/")).concat(colDocs("msgs").map((k) => [k, data.get(k)]).slice(-200)); guestConn.send({ t: "full", hostUid, d: es }); }
+  notice("Campanha importada.");
+}));
+
+/* ---------- configuração do Mestre ---------- */
+function renderLlm() {
+  const c = llmCfg();
+  $("#llm-prov").value = c.prov;
+  if (document.activeElement !== $("#llm-key")) $("#llm-key").value = c.key;
+  $("#llm-model").value = c.model; $("#llm-url").value = c.prov === "custom" ? c.url : c.url;
+  $("#llm-url-l").hidden = c.prov !== "custom";
+}
+function readLlmForm() {
+  const prov = $("#llm-prov").value;
+  return { prov, key: $("#llm-key").value.trim(), model: $("#llm-model").value.trim() || PROVS[prov].model, url: prov === "custom" ? $("#llm-url").value.trim() : PROVS[prov].base };
+}
+$("#llm-prov").addEventListener("change", () => {
+  const prov = $("#llm-prov").value, old = llmCfg();
+  saveLlm({ prov, key: old.key, model: PROVS[prov].model, url: PROVS[prov].base });
+  renderLlm(); renderBar(); $("#llm-msg").textContent = "";
+});
+["llm-key", "llm-model", "llm-url"].forEach((id) => $("#" + id).addEventListener("change", () => { saveLlm(readLlmForm()); renderBar(); }));
+$("#btn-models").addEventListener("click", async () => {
+  saveLlm(readLlmForm());
+  const m = $("#llm-msg"); m.textContent = "Buscando modelos...";
+  try {
+    const l = await listModels();
+    const dl = $("#llm-models"); dl.replaceChildren(); l.forEach((n) => { const o = document.createElement("option"); o.value = n; dl.append(o); });
+    m.textContent = l.length ? l.length + " modelos encontrados. Toque no campo Modelo para escolher (os \"flash\" e \"lite\" são os mais econômicos)." : "Nenhum modelo encontrado.";
+  } catch (e) { m.textContent = llmCopy(e); }
+});
+$("#btn-test").addEventListener("click", async () => {
+  saveLlm(readLlmForm()); renderBar();
+  const m = $("#llm-msg"); m.textContent = "Testando...";
+  try {
+    const r = await callLLM("", "Responda apenas com a palavra: ok", { maxTokens: 60 });
+    m.textContent = "Funcionou! Resposta: \"" + clip(one(r.text), 40) + "\"" + (r.tokens ? " (" + r.tokens + " tokens)" : "") + ".";
+  } catch (e) { m.textContent = llmCopy(e); }
+});
+
+/* ---------- início ---------- */
+(function init() {
+  autoBox.checked = store.get("gen-auto") !== "0";
+  renderLlm(); renderAll();
+  const hm = /#sala=([A-Za-z0-9]{6})/.exec(location.hash || "");
+  const code = hm ? hm[1].toUpperCase() : "";
+  const sv = loadSave();
+  if (code && sv && sv.room === code) { startHost(sv.room, sv); return; }
+  if (code) { $("#join-code").value = code; startGuest(code); return; }
+  renderLobby("");
+})();
+})();
+</script>
+</body>
+</html>
